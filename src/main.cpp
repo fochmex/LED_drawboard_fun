@@ -11,6 +11,15 @@ namespace
     uint8_t currentTest = 0;
     uint32_t lastTransitionMs = 0;
 
+    uint8_t clampBrightness(uint8_t requestedBrightness)
+    {
+        if (requestedBrightness > MAX_ALLOWED_BRIGHTNESS)
+        {
+            return MAX_ALLOWED_BRIGHTNESS;
+        }
+        return requestedBrightness;
+    }
+
     uint16_t xyToIndex(uint8_t x, uint8_t y)
     {
         if (x >= MATRIX_WIDTH || y >= MATRIX_HEIGHT)
@@ -124,7 +133,12 @@ namespace
         Serial.printf("Board: ESP32-S3\n");
         Serial.printf("Matrix size: %ux%u\n", MATRIX_WIDTH, MATRIX_HEIGHT);
         Serial.printf("Pixel count: %u\n", PIXEL_COUNT);
-        Serial.printf("Startup brightness: %u\n", STARTUP_BRIGHTNESS);
+        Serial.printf("Startup brightness: %u\n", clampBrightness(STARTUP_BRIGHTNESS));
+        Serial.printf("Max safe brightness: %u/%u (%u%%)\n",
+                      MAX_ALLOWED_BRIGHTNESS,
+                      MAX_BRIGHTNESS_VALUE,
+                      SAFE_BRIGHTNESS_LIMIT_PERCENT);
+        Serial.printf("Power source: Mean Well LPV-100-5, 5 V / 12 A max\n");
         Serial.printf("Data pin: %d\n", LED_DATA_PIN);
         Serial.printf("Status pin: %d\n", LED_STATUS_PIN);
         Serial.printf("Wiring mode: %s\n",
@@ -163,7 +177,7 @@ void setup()
     digitalWrite(LED_STATUS_PIN, HIGH);
 
     FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(leds, PIXEL_COUNT);
-    FastLED.setBrightness(STARTUP_BRIGHTNESS);
+    FastLED.setBrightness(clampBrightness(STARTUP_BRIGHTNESS));
     FastLED.setCorrection(TypicalLEDStrip);
     clearMatrix();
     FastLED.show();
@@ -183,5 +197,3 @@ void loop()
         lastTransitionMs = millis();
     }
 }
-
-]} ,

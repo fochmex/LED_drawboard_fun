@@ -1,6 +1,6 @@
 # LED_drawboard_fun
 
-A local, browser-driven 16x16 RGB LED matrix project built around an ESP32-S3. The system is designed to validate the display hardware first, then expand into a web-controlled drawing surface with no cloud dependency.
+A local, browser-driven 16x16 RGB LED matrix project built around an ESP32-S3. The system is designed to validate the display hardware first, then expand into a web-controlled drawing surface with animation and local browser tools.
 
 ## Project goal
 
@@ -36,6 +36,7 @@ The repository currently focuses on Stage 1: proving the hardware is correct and
 - 300 Ω to 500 Ω series resistor recommended on the LED data line
 - LED power is not sourced through the ESP32 board headers
 - Startup brightness is set to 32 for safe validation tests
+- The supply is a Mean Well LPV-100-5, 5 V / 12 A max. A full-white 16x16 WS2812B matrix can theoretically draw 256 × 60 mA = 15.36 A, which exceeds the supply limit, so the firmware enforces a software brightness ceiling at 78% of full scale
 
 ### Matrix configuration
 The current project configuration matches the hardware and software assumptions in the code:
@@ -61,6 +62,7 @@ Current software responsibilities:
 - support serpentine wiring and correct indexing
 - run staged hardware validation patterns
 - print detailed serial diagnostics for debugging and verification
+- enforce a safe software brightness ceiling to protect the 5 V supply
 - prepare the platform for later Wi‑Fi and browser control features
 
 The firmware currently performs a validation routine that checks:
@@ -73,7 +75,7 @@ The firmware currently performs a validation routine that checks:
 
 This repository is currently focused on Stage 1 of the development plan: Basic LED control and hardware validation.
 
-The design principle is to avoid adding Wi‑Fi, browser features, or storage functionality until the display hardware is proven stable. Only after the matrix is electrically sound and correctly mapped should the system advance to networking and local web control.
+The design principle is to avoid adding Wi‑Fi, browser features, or storage functionality until the display hardware is proven stable. Only after the matrix is electrically sound and correctly mapped should the project move to higher-power display features.
 
 ## Stage 1 success criteria
 
@@ -83,7 +85,7 @@ The firmware and hardware are considered valid for Stage 1 when all of the follo
 - the 3.3 V to 5 V level-shifter path functions correctly
 - all 256 pixels can be addressed without dead pixels or wiring faults
 - coordinate mapping matches the physical matrix layout
-- the system remains stable during repeated testing at low brightness
+- the system remains stable during repeated testing while staying under the power limit
 
 ## Stage-based roadmap
 
@@ -102,6 +104,7 @@ The firmware and hardware are considered valid for Stage 1 when all of the follo
 - bulk capacitance and injection points
 - current draw and voltage-drop testing
 - safe brightness limits
+- confirm firmware brightness cap stays below the Mean Well 12 A limit
 
 ### Stage 3: Wi‑Fi and networking
 - connect to the local router
@@ -143,12 +146,13 @@ The firmware and hardware are considered valid for Stage 1 when all of the follo
 - Keep the LED data line short and include a 300 Ω to 500 Ω series resistor.
 - Keep brightness low during initial tests and only raise it after the wiring is verified.
 - Treat the LED matrix as a power system as well as a digital display.
+- The firmware must never allow the brightness to exceed the configured software ceiling, because the 5 V / 12 A supply cannot safely support a theoretical 15.36 A full-white matrix.
 
 ## Repository structure
 
 Key project files:
 - `platformio.ini` — PlatformIO project configuration
-- `include/ProjectConfig.h` — matrix size, brightness, test values
+- `include/ProjectConfig.h` — matrix size, brightness, test values, and power limits
 - `include/PinConfig.h` — GPIO assignments
 - `include/MatrixConfig.h` — wiring and rotation settings
 - `include/secrets.example.h` — example secrets template
@@ -171,14 +175,16 @@ This project is built with:
 3. Confirm the LED data pin in `include/PinConfig.h` matches your hardware.
 4. Confirm the matrix is powered from a regulated 5 V source with a common ground.
 5. Build and upload the firmware.
-6. Watch the serial monitor for the Stage 1 validation sequence.
+6. Verify the serial monitor shows the safe brightness cap and the project remains under the 12 A supply limit.
+7. Watch the serial monitor for the Stage 1 validation sequence.
 
 ## Technical summary
 
 This project is a practical embedded electronics build with a clear progression:
 - first, verify the LED matrix and its electrical interface
 - second, confirm pixel addressing and physical mapping
-- third, add network connectivity and a local browser UI
+- third, set safe operating limits for power and brightness
+- fourth, add network connectivity and a local browser UI
 - finally, turn the display into a useful drawing and information system
 
 The current codebase reflects a disciplined engineering approach: validate the hardware first, then layer software features on top of a proven foundation.

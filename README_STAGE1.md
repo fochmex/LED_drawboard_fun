@@ -14,7 +14,7 @@ The design is intentionally tight and test-driven:
 - validate the 5 V power setup and common ground
 - test serpentine or straight-row mapping across all 256 pixels
 - enforce a safe maximum brightness so the matrix cannot exceed the 12 A 5 V supply limit
-- prevent adding Wi-Fi or browser work until the hardware is proven stable
+- prevent adding Wi‑Fi or browser work until the hardware is proven stable
 
 ## Stage 1 goals
 - Test a single RGB LED with red, green, blue, and white output
@@ -22,7 +22,7 @@ The design is intentionally tight and test-driven:
 - Confirm the 3.3 V to 5 V logic conversion path is working
 - Connect the full 16x16 panel and validate every pixel
 - Check coordinate mapping for row order and serpentine wiring
-- Establish a repeatable baseline before Stage 2 power and Stage 3 Wi-Fi work
+- Establish a repeatable baseline before Stage 2 power and Stage 3 Wi‑Fi work
 - Keep the software brightness below the safe ceiling dictated by the LPV-100-5 5 V / 12 A supply
 
 ## Power-limit note
@@ -71,7 +71,7 @@ This is above the supply capability, so the firmware enforces a software brightn
 - measurement of current and voltage drop
 - software and hardware power margin validation
 
-### Stage 3: Wi-Fi and networking
+### Stage 3: Wi‑Fi and networking
 - connect to router
 - display IP address
 - reconnect behavior
@@ -80,7 +80,7 @@ This is above the supply capability, so the firmware enforces a software brightn
 ### Stage 4: Basic web server
 - status page
 - device information
-- matrix status and Wi-Fi state
+- matrix status and Wi‑Fi state
 
 ### Stage 5: Drawing interface
 - 16x16 browser grid
