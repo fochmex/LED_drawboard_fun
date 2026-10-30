@@ -1,0 +1,8 @@
+# This file is usually committed with a template example and a local secrets file kept out of git.
+# For the first hardware-validation stage, the project does not need Wi-Fi credentials yet.
+
+.pio/
+.vscode/
+.DS_Store
+*.log
+include/secrets.h
