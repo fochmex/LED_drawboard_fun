@@ -1,22 +1,73 @@
 #pragma once
 
+// -----------------------------------------------------------------------------
+// LED matrix geometry
+// -----------------------------------------------------------------------------
+
+// Number of LEDs in the horizontal direction.
 #define MATRIX_WIDTH 16
+
+// Number of LEDs in the vertical direction.
 #define MATRIX_HEIGHT 16
+
+// Total number of addressable LEDs in the matrix.
+// For a 16 x 16 matrix: 16 * 16 = 256 LEDs.
 #define PIXEL_COUNT (MATRIX_WIDTH * MATRIX_HEIGHT)
 
-// Mean Well LPV-100-5: 5 V / 12 A max output.
-// A full-white 16x16 WS2812B matrix can draw up to:
-// 256 LEDs * 60 mA = 15.36 A, which exceeds the 12 A power supply limit.
-// Keep the display below this source limit by enforcing a 78% software cap.
+// -----------------------------------------------------------------------------
+// Power-supply and LED current assumptions
+// -----------------------------------------------------------------------------
+
+// Mean Well LPV-100-5 power supply ratings used for the safety calculation:
+// nominal output voltage = 5 V, maximum output current = 12 A.
 #define SUPPLY_VOLTAGE_V 5
 #define SUPPLY_MAX_CURRENT_MA 12000
-#define LED_FULL_WHITE_CURRENT_MA 60
-#define THEORETICAL_FULL_WHITE_CURRENT_MA (PIXEL_COUNT * LED_FULL_WHITE_CURRENT_MA)
-#define SAFE_BRIGHTNESS_LIMIT_PERCENT 78
-#define MAX_BRIGHTNESS_VALUE 255
-#define MAX_ALLOWED_BRIGHTNESS ((MAX_BRIGHTNESS_VALUE * SAFE_BRIGHTNESS_LIMIT_PERCENT) / 100U)
 
+// Conservative maximum-current assumption for one WS2812B LED at full white.
+// Full white activates the red, green, and blue channels simultaneously.
+#define LED_FULL_WHITE_CURRENT_MA 60
+
+// Theoretical current if every LED is set to full white at maximum brightness.
+// For 256 LEDs: 256 * 60 mA = 15,360 mA = 15.36 A.
+// This is higher than the power supply's 12 A maximum rating.
+#define THEORETICAL_FULL_WHITE_CURRENT_MA \
+    (PIXEL_COUNT * LED_FULL_WHITE_CURRENT_MA)
+
+// -----------------------------------------------------------------------------
+// Software brightness limits
+// -----------------------------------------------------------------------------
+
+// Limit global brightness to 78% so the theoretical full-white current remains
+// approximately within the 12 A power-supply limit:
+// 15.36 A * 0.78 = approximately 11.98 A.
+// This is a software safeguard, not a replacement for suitable wiring, fusing,
+// power injection, cooling, and electrical protection.
+#define SAFE_BRIGHTNESS_LIMIT_PERCENT 78
+
+// FastLED brightness uses an 8-bit value from 0 to 255.
+#define MAX_BRIGHTNESS_VALUE 255
+
+// Highest global brightness value permitted by the configured percentage cap.
+// With a 78% limit: (255 * 78) / 100 = 198.
+#define MAX_ALLOWED_BRIGHTNESS \
+    ((MAX_BRIGHTNESS_VALUE * SAFE_BRIGHTNESS_LIMIT_PERCENT) / 100U)
+
+// Initial global brightness after startup.
+// 32 of 255 is approximately 12.5%, which provides a conservative startup.
 #define STARTUP_BRIGHTNESS 32
+
+// Recommended maximum brightness during the Stage 1 hardware tests.
+// 64 of 255 is approximately 25%.
 #define MAX_TEST_BRIGHTNESS 64
+
+// -----------------------------------------------------------------------------
+// Test and power-management timing
+// -----------------------------------------------------------------------------
+
+// Delay between individual colors or states in the Stage 1 hardware tests.
 #define STAGE1_TEST_DELAY_MS 500
+
+// Enter deep sleep after one hour without registered LED activity.
+// UL forces unsigned long arithmetic, which prevents 16-bit integer overflow
+// on Arduino-compatible targets when calculating milliseconds.
 #define IDLE_SLEEP_TIMEOUT_MS (60UL * 60UL * 1000UL)
