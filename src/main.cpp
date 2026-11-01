@@ -1,5 +1,6 @@
 #include <Arduino.h>
 #include <FastLED.h>
+#include <cstring>
 
 #include "ProjectConfig.h"
 #include "PinConfig.h"
@@ -10,6 +11,41 @@ namespace
     CRGB leds[PIXEL_COUNT];
     uint8_t currentTest = 0;
     uint32_t lastTransitionMs = 0;
+    uint32_t lastActivityMs = 0;
+
+    static RTC_DATA_ATTR CRGB rtcLastFrame[PIXEL_COUNT];
+    static RTC_DATA_ATTR bool rtcFrameValid = false;
+
+    void markLedActivity()
+    {
+        lastActivityMs = millis();
+    }
+
+    void clearMatrix()
+    {
+        FastLED.clear(true);
+        markLedActivity();
+    }
+
+    void saveCurrentFrameToRtc()
+    {
+        std::memcpy(rtcLastFrame, leds, sizeof(leds));
+        rtcFrameValid = true;
+    }
+
+    void restoreLastFrameFromRtc()
+    {
+        if (!rtcFrameValid)
+        {
+            clearMatrix();
+            FastLED.show();
+            return;
+        }
+
+        std::memcpy(leds, rtcLastFrame, sizeof(leds));
+        FastLED.show();
+        markLedActivity();
+    }
 
     uint8_t clampBrightness(uint8_t requestedBrightness)
     {
@@ -48,11 +84,7 @@ namespace
         }
 
         leds[xyToIndex(x, y)] = color;
-    }
-
-    void clearMatrix()
-    {
-        FastLED.clear(true);
+        markLedActivity();
     }
 
     void printStageHeader(const char* label)
@@ -141,9 +173,14 @@ namespace
         Serial.printf("Power source: Mean Well LPV-100-5, 5 V / 12 A max\n");
         Serial.printf("Data pin: %d\n", LED_DATA_PIN);
         Serial.printf("Status pin: %d\n", LED_STATUS_PIN);
+        Serial.printf("Wake button pin: %d\n", WAKE_BUTTON_PIN);
+        Serial.printf("Button active level: %s\n", WAKE_BUTTON_ACTIVE_LEVEL == LOW ? "LOW" : "HIGH");
+        Serial.printf("Long press threshold: %u ms\n", WAKE_BUTTON_LONG_PRESS_MS);
+        Serial.printf("Idle shutdown timeout: %lu ms\n", IDLE_SLEEP_TIMEOUT_MS);
         Serial.printf("Wiring mode: %s\n",
                       MATRIX_WIRING_MODE == MatrixWiringMode::kSerpentine ? "serpentine" : "straight");
         Serial.println("Validation sequence: single LED -> matrix sweep -> coordinate check");
+        Serial.println("Wake/sleep: long-press button enters deep sleep and restores the last LED frame on wake");
         Serial.println("========================================");
     }
 
@@ -166,6 +203,79 @@ namespace
                 break;
         }
     }
+
+    bool isWakeButtonPressed()
+    {
+        return digitalRead(WAKE_BUTTON_PIN) == WAKE_BUTTON_ACTIVE_LEVEL;
+    }
+
+    bool readDebouncedButtonState()
+    {
+        static bool stableState = false;
+        static bool lastRawState = false;
+        static uint32_t lastRawChangeMs = 0;
+
+        const bool rawState = isWakeButtonPressed();
+
+        if (rawState != lastRawState)
+        {
+            lastRawState = rawState;
+            lastRawChangeMs = millis();
+        }
+
+        if ((millis() - lastRawChangeMs) >= WAKE_BUTTON_DEBOUNCE_MS)
+        {
+            stableState = rawState;
+        }
+
+        return stableState;
+    }
+
+    void enterDeepSleep()
+    {
+        Serial.println("Long press detected: entering deep sleep...");
+        saveCurrentFrameToRtc();
+        clearMatrix();
+        FastLED.show();
+        digitalWrite(LED_STATUS_PIN, LOW);
+
+        esp_sleep_enable_ext0_wakeup(static_cast<gpio_num_t>(WAKE_BUTTON_PIN), WAKE_BUTTON_ACTIVE_LEVEL);
+        esp_deep_sleep_start();
+    }
+
+    void handleWakeButtonSleepInput()
+    {
+        static bool buttonWasPressed = false;
+        static uint32_t buttonPressStartMs = 0;
+
+        const bool buttonPressed = readDebouncedButtonState();
+
+        if (buttonPressed && !buttonWasPressed)
+        {
+            buttonPressStartMs = millis();
+        }
+
+        if (!buttonPressed && buttonWasPressed)
+        {
+            buttonPressStartMs = 0;
+        }
+
+        buttonWasPressed = buttonPressed;
+
+        if (buttonPressed && ((millis() - buttonPressStartMs) >= WAKE_BUTTON_LONG_PRESS_MS))
+        {
+            enterDeepSleep();
+        }
+    }
+
+    void handleIdleSleepTimeout()
+    {
+        if ((millis() - lastActivityMs) >= IDLE_SLEEP_TIMEOUT_MS)
+        {
+            Serial.printf("Idle timeout reached (%lu ms): entering deep sleep.\n", IDLE_SLEEP_TIMEOUT_MS);
+            enterDeepSleep();
+        }
+    }
 }
 
 void setup()
@@ -174,21 +284,43 @@ void setup()
     delay(1000);
 
     pinMode(LED_STATUS_PIN, OUTPUT);
+    pinMode(WAKE_BUTTON_PIN, INPUT_PULLUP);
     digitalWrite(LED_STATUS_PIN, HIGH);
+
+    const esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT0)
+    {
+        Serial.println("Wake reason: external wake button");
+    }
+    else
+    {
+        Serial.println("Wake reason: normal boot / power cycle");
+    }
 
     FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(leds, PIXEL_COUNT);
     FastLED.setBrightness(clampBrightness(STARTUP_BRIGHTNESS));
     FastLED.setCorrection(TypicalLEDStrip);
-    clearMatrix();
-    FastLED.show();
+
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT0)
+    {
+        restoreLastFrameFromRtc();
+    }
+    else
+    {
+        clearMatrix();
+        FastLED.show();
+    }
 
     printStartupSummary();
     lastTransitionMs = millis();
+    lastActivityMs = millis();
 }
 
 void loop()
 {
     static const uint32_t kStepDelayMs = 2500UL;
+
+    handleWakeButtonSleepInput();
 
     if ((millis() - lastTransitionMs) > kStepDelayMs)
     {
@@ -196,4 +328,6 @@ void loop()
         currentTest = (currentTest + 1U) % 3U;
         lastTransitionMs = millis();
     }
+
+    handleIdleSleepTimeout();
 }
