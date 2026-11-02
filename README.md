@@ -37,6 +37,7 @@ The repository currently focuses on Stage 1: proving the hardware is correct and
 - LED power is not sourced through the ESP32 board headers
 - Startup brightness is set to 32 for safe validation tests
 - The supply is a Mean Well LPV-100-5, 5 V / 12 A max. A full-white 16x16 WS2812B matrix can theoretically draw 256 × 60 mA = 15.36 A, which exceeds the supply limit, so the firmware enforces a software brightness ceiling to protect the system.
+- A 12A fuse will be used on the +5V output of the LPV 100 5 
 
 ## 74AHCT125 Logic-Level Shifter
 
