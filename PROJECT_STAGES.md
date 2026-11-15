@@ -3,7 +3,7 @@
 ## Project overview
 This project is a 16x16 RGB LED matrix controlled by an ESP32-S3. The long-term goal is a local, browser-driven display that can draw and animate without any cloud dependency.
 
-This repository is now intentionally following a phased implementation plan. The first milestone is not the full app; it is a hardware validation stage that proves the LED driver, GPIO wiring, level shifter, and matrix layout are all correct.
+This repository is now intentionally following a phased implementation plan. The first milestone is not the full app; it is a hardware validation stage that proves the LED driver, GPIO wiring, level-shifting path, power distribution, and matrix mapping before any later network features are added.
 
 ## Current implementation status
 The repository is currently focused on Stage 1: Basic LED Control.
@@ -42,7 +42,13 @@ The project uses a Mean Well LPV-100-5 5 V power supply with a 12 A maximum outp
 
 256 LEDs × 60 mA = 15.36 A
 
-This is above the supply capability, so the firmware enforces a software brightness limit of 78% of full scale. The configured maximum brightness is `MAX_ALLOWED_BRIGHTNESS = 198/255`, which keeps the matrix comfortably below the supply ceiling while still providing strong output.
+This is above the supply capability, so the firmware enforces a software brightness limit of 78% of full scale. The configured maximum brightness is `MAX_ALLOWED_BRIGHTNESS = 198/255`, which keeps the matrix below the 12 A ceiling while still providing strong output.
+
+The design intent is:
+- keep the matrix within the safe power envelope of the LPV-100-5
+- protect the wiring and power injection from overcurrent stress
+- allow a useful brightness range during testing without exceeding the supply limit
+- treat the brightness cap as a software safety feature, not a substitute for proper fusing, power injection, and grounding
 
 ## Files created for Stage 1
 - platformio.ini
@@ -70,6 +76,7 @@ This is above the supply capability, so the firmware enforces a software brightn
 - Treat the matrix as a power system, not just a digital display.
 - The firmware must clamp brightness to the configured maximum to prevent exceeding the 12 A supply limit.
 - Use a normally-open button to GND with input pull-up so the board can wake reliably from deep sleep.
+- Install a fuse on the 5 V rail feeding the matrix and logic circuitry.
 
 ## Full roadmap
 ### Stage 1: Basic LED control
@@ -131,7 +138,7 @@ This Stage 1 implementation is designed for PlatformIO with the Arduino framewor
 7. Hold the wake button for 5 seconds to test deep sleep and wake recovery.
 
 ## Important design principle
-The overall product is ambitious, but the best way to make it reliable is to validate the hardware first. This repository now reflects that principle directly, including a programmable brightness cap and a simple hardware sleep flow for the validation stage.
+The overall product is ambitious, but the best way to make it reliable is to validate the hardware first. This repository now reflects that principle directly, including a programmable brightness ceiling, proper fusing, and conservative power budgeting for the LPV-100-5 supply.
 
 ## Related docs
 - README_STAGE1.md
