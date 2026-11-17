@@ -3,7 +3,9 @@
 Stages 1 and 2 were accepted by the hardware owner on 2026-11-17. LED control,
 sleep/wake, the connected fuse and 5 V supply, and the existing brightness
 limit are confirmed working. Stage 3 Wi-Fi networking is accepted after four
-sleep/wake retests. Stage 4 adds a local web dashboard, pending device acceptance.
+sleep/wake retests. Stage 4's local dashboard and dropdown fix are accepted.
+Stage 5's drawing tools, brightness controls, wake correction, and expanded
+effects were accepted by the owner on 2026-11-18.
 See [network and dashboard setup](PROJECT_STAGES.md);
 effects and button controls remain available while connecting or offline.
 
@@ -17,6 +19,11 @@ The firmware now plays this repeating playlist instead of the hardware tests:
 4. **Plasma:** flowing two-dimensional color waves.
 5. **Bouncing scanner:** a colored vertical bar sweeping left and right.
 6. **Ocean waves:** moving blue/green brightness waves.
+7. **Fireworks:** colorful rockets and expanding sparks against black.
+8. **Color-changing fish:** a slowly color-shifting fish swims between
+   pseudo-random positions against black, turning and wagging its tail.
+
+The two new effects clear unoccupied pixels every frame: no background glow or trails.
 
 Effects change automatically every **20 seconds** by default. The web dashboard
 can select a single effect or toggle the automatic playlist. **Short-press and release**
@@ -24,7 +31,10 @@ the GPIO14 button to skip to the next effect and restart that timer. The serial
 monitor prints the effect name. Frames are scheduled every 20 ms; button polling
 continues between frames.
 
-Brightness is unchanged: startup 32/255, maximum 198/255. To adjust animation
+Brightness now defaults to 15/255, with an owner-selected maximum of 70/255.
+Stage 5 allows browser adjustment between 0 and that ceiling, and static drawings
+with explicit Apply. A short physical press leaves drawing mode for the next effect.
+To adjust animation
 timing, use `EFFECT_FRAME_INTERVAL_MS` and `EFFECT_DURATION_MS` in
 [`include/ProjectConfig.h`](include/ProjectConfig.h).
 
@@ -42,9 +52,10 @@ some pairs of legs are permanently connected.
    pattern pauses while the firmware waits for release.
 4. Release. Confirm `Entering deep sleep`, the panel turns off, and tests stop.
 5. Press again to wake. Confirm `Wake reason: external wake button`. The saved
-   frame, effect, and playlist mode are restored; release before another gesture.
+   frame, drawing/effect mode, brightness, and playlist mode are restored; release before another gesture.
    The wake press does not skip an effect. Animation resumes with a fresh
-   20-second automatic-cycle timer. A power cycle starts again at rainbow.
+   20-second automatic-cycle timer, or a static drawing remains static.
+   A power cycle starts again at rainbow with brightness 15.
 
 EXT0 wake is level-triggered, so sleep must wait for release to avoid immediate
 wake-up. After wake, GPIO14 is returned from RTC mode to normal digital input.
@@ -78,7 +89,7 @@ change the display, so they prevent the idle timeout from expiring.
 
 ## Effects acceptance checks
 
-- Observe all six effects over two minutes; the playlist wraps back to rainbow.
+- Observe all eight effects over three minutes; the playlist wraps back to rainbow.
 - Short-press during each effect: advance once on release, without a reset.
 - Skip just before an automatic transition: the next effect should remain for
   a fresh 20 seconds, not immediately skip again.

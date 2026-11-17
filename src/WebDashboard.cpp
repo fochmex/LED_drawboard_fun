@@ -4,6 +4,7 @@
 
 #include "DashboardPage.h"
 #include "EffectControl.h"
+#include "DisplayControl.h"
 #include "ProjectConfig.h"
 #include "WebDashboard.h"
 
@@ -32,8 +33,9 @@ namespace
         body += ",\"width\":" + String(MATRIX_WIDTH);
         body += ",\"height\":" + String(MATRIX_HEIGHT);
         body += ",\"pixels\":" + String(PIXEL_COUNT);
-        body += ",\"brightness\":" + String(STARTUP_BRIGHTNESS > MAX_ALLOWED_BRIGHTNESS
-                                          ? MAX_ALLOWED_BRIGHTNESS : STARTUP_BRIGHTNESS);
+        body += ",\"brightness\":" + String(DisplayControl::brightness());
+        body += ",\"drawing\":";
+        body += DisplayControl::drawing() ? "true" : "false";
         body += ",\"maxBrightness\":" + String(MAX_ALLOWED_BRIGHTNESS);
         body += ",\"uptimeMs\":" + String(millis());
         body += ",\"freeHeap\":" + String(ESP.getFreeHeap());
@@ -113,6 +115,33 @@ void WebDashboard::begin()
         }
         EffectControl::setPlaylistEnabled(enabled == "true");
         sendStatus();
+    });
+    server.on("/api/frame", HTTP_POST, []()
+    {
+        if (!validateControl("pixels")) return;
+        const String pixels = server.arg("pixels");
+        if (!DisplayControl::applyFrame(pixels.c_str(), pixels.length()))
+        {
+            sendJson(400, "{\"error\":\"pixels must contain exactly 256 RGB hex colors (1536 hex digits)\"}");
+            return;
+        }
+        sendStatus();
+    });
+    server.on("/api/brightness", HTTP_POST, []()
+    {
+        if (!validateControl("value")) return;
+        const String value = server.arg("value");
+        for (uint16_t i = 0; i <= MAX_ALLOWED_BRIGHTNESS; ++i)
+        {
+            if (value == String(i))
+            {
+                DisplayControl::setBrightness(i);
+                sendStatus();
+                return;
+            }
+        }
+        Serial.println("[HTTP] Rejected brightness value.");
+        sendJson(400, "{\"error\":\"value must be a canonical integer from 0 to the safe brightness ceiling\"}");
     });
     server.onNotFound([]()
     {

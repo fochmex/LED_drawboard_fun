@@ -9,6 +9,7 @@
 #include "MatrixConfig.h"
 #include "NetworkManager.h"
 #include "EffectControl.h"
+#include "DisplayControl.h"
 #include "WebDashboard.h"
 
 namespace
@@ -25,11 +26,14 @@ namespace
         kPlasma,
         kScanner,
         kColorWaves,
+        kFireworks,
+        kFish,
         kCount
     };
 
     const char* const effectNames[] = {
-        "Rainbow", "Confetti", "Comet", "Plasma", "Bouncing scanner", "Ocean waves"};
+        "Rainbow", "Confetti", "Comet", "Plasma", "Bouncing scanner", "Ocean waves",
+        "Fireworks", "Color-changing fish"};
     static_assert(sizeof(effectNames) / sizeof(effectNames[0]) ==
                   static_cast<uint8_t>(Effect::kCount), "Every effect needs a name");
     Effect currentEffect = Effect::kRainbow;
@@ -37,6 +41,7 @@ namespace
     uint32_t lastEffectChangeMs = 0;
     uint32_t lastFrameMs = 0;
     bool autoPlaylist = true;
+    bool drawingMode = false;
 
     // Updated whenever the LED content changes. Used for the automatic
     // idle-to-deep-sleep timeout.
@@ -45,11 +50,14 @@ namespace
 
     // RTC memory survives ESP32 deep sleep. This allows the last displayed
     // LED frame to be restored after waking with the button.
-    static RTC_DATA_ATTR CRGB rtcLastFrame[PIXEL_COUNT];
+    // CRGB's startup constructor clears retained pixels; RTC storage must be raw bytes.
+    static RTC_DATA_ATTR uint8_t rtcLastFrame[sizeof(leds)];
     static RTC_DATA_ATTR bool rtcFrameValid = false;
     static RTC_DATA_ATTR uint8_t rtcEffect = 0;
     static RTC_DATA_ATTR uint32_t rtcEffectElapsedMs = 0;
     static RTC_DATA_ATTR bool rtcAutoPlaylist = true;
+    static RTC_DATA_ATTR bool rtcDrawingMode = false;
+    static RTC_DATA_ATTR uint8_t rtcBrightness = STARTUP_BRIGHTNESS;
 
     void markLedActivity()
     {
@@ -69,6 +77,8 @@ namespace
         rtcEffect = static_cast<uint8_t>(currentEffect);
         rtcEffectElapsedMs = millis() - effectStartMs;
         rtcAutoPlaylist = autoPlaylist;
+        rtcDrawingMode = drawingMode;
+        rtcBrightness = FastLED.getBrightness();
         rtcFrameValid = true;
     }
 
@@ -85,8 +95,19 @@ namespace
         std::memcpy(leds, rtcLastFrame, sizeof(leds));
         currentEffect = static_cast<Effect>(rtcEffect);
         autoPlaylist = rtcAutoPlaylist;
+        drawingMode = rtcDrawingMode;
+        FastLED.setBrightness(rtcBrightness > MAX_ALLOWED_BRIGHTNESS
+                                  ? MAX_ALLOWED_BRIGHTNESS : rtcBrightness);
         effectStartMs = millis() - rtcEffectElapsedMs;
         FastLED.show();
+        uint16_t coloredPixels = 0;
+        for (const CRGB& pixel : leds)
+        {
+            if (pixel.r != 0 || pixel.g != 0 || pixel.b != 0) ++coloredPixels;
+        }
+        Serial.printf("Restored RTC display: %s | brightness: %u | colored pixels: %u/%u\n",
+                      drawingMode ? "drawing" : "effect", FastLED.getBrightness(),
+                      coloredPixels, PIXEL_COUNT);
         markLedActivity();
     }
 
@@ -109,6 +130,9 @@ namespace
         {
             return 0;
         }
+
+        if (MATRIX_MIRROR_X) x = MATRIX_WIDTH - 1U - x;
+        if (MATRIX_MIRROR_Y) y = MATRIX_HEIGHT - 1U - y;
 
         // In serpentine matrices, every second row runs in the opposite
         // direction. Convert logical X/Y coordinates to the physical LED index.
@@ -139,6 +163,7 @@ namespace
 
     void selectEffect(uint8_t index)
     {
+        drawingMode = false;
         currentEffect = static_cast<Effect>(index);
         effectStartMs = millis();
         lastEffectChangeMs = effectStartMs;
@@ -150,6 +175,89 @@ namespace
     {
         selectEffect((static_cast<uint8_t>(currentEffect) + 1U) %
                      static_cast<uint8_t>(Effect::kCount));
+    }
+
+    uint32_t effectRandom(uint32_t value)
+    {
+        // Repeatable waypoints/bursts let elapsed-time restoration also restore motion.
+        value ^= value >> 16;
+        value *= 0x7feb352dU;
+        value ^= value >> 15;
+        value *= 0x846ca68bU;
+        return value ^ (value >> 16);
+    }
+
+    void plotEffectPixel(int16_t x, int16_t y, const CRGB& color)
+    {
+        if (x >= 0 && x < MATRIX_WIDTH && y >= 0 && y < MATRIX_HEIGHT)
+        {
+            setPixel(static_cast<uint8_t>(x), static_cast<uint8_t>(y), color);
+        }
+    }
+
+    void renderFireworks(uint32_t elapsedMs)
+    {
+        FastLED.clear(false);
+        const uint32_t burst = elapsedMs / 2800U;
+        const uint32_t age = elapsedMs % 2800U;
+        const uint32_t seed = effectRandom(burst + 137U);
+        const int16_t centerX = 4 + seed % (MATRIX_WIDTH - 8U);
+        const int16_t centerY = 3 + (seed >> 8) % (MATRIX_HEIGHT - 8U);
+        const uint8_t hue = static_cast<uint8_t>(seed >> 16);
+        if (age < 700U)
+        {
+            const int16_t y = MATRIX_HEIGHT - 1 -
+                static_cast<int32_t>(MATRIX_HEIGHT - 1 - centerY) * age / 700;
+            plotEffectPixel(centerX, y, CHSV(hue, 100, 255));
+            plotEffectPixel(centerX, y + 1, CHSV(hue, 255, 100));
+        }
+        else if (age < 2300U)
+        {
+            const uint32_t expansion = age - 700U;
+            const uint8_t value = 255U - expansion * 230U / 1600U;
+            for (uint8_t spark = 0; spark < 16; ++spark)
+            {
+                const uint8_t angle = spark * 16U + static_cast<uint8_t>(seed);
+                const int32_t radius = expansion * (4U + (effectRandom(seed + spark) % 4U));
+                const int16_t x = centerX +
+                    (static_cast<int32_t>(cos8(angle)) - 128) * radius / 128000;
+                const int16_t y = centerY +
+                    (static_cast<int32_t>(sin8(angle)) - 128) * radius / 128000 +
+                    static_cast<int32_t>(expansion * expansion / 1600000U);
+                plotEffectPixel(x, y, CHSV(hue + spark * 3U, 230, value));
+            }
+        }
+    }
+
+    void renderFish(uint32_t elapsedMs)
+    {
+        FastLED.clear(false);
+        const uint32_t segment = elapsedMs / 1800U;
+        const uint32_t progress = elapsedMs % 1800U;
+        const uint32_t from = effectRandom(segment + 401U);
+        const uint32_t to = effectRandom(segment + 402U);
+        const int16_t fromX = 3 + from % (MATRIX_WIDTH - 6U);
+        const int16_t fromY = 2 + (from >> 8) % (MATRIX_HEIGHT - 4U);
+        const int16_t toX = 3 + to % (MATRIX_WIDTH - 6U);
+        const int16_t toY = 2 + (to >> 8) % (MATRIX_HEIGHT - 4U);
+        const int16_t centerX = fromX + (toX - fromX) * static_cast<int32_t>(progress) / 1800;
+        const int16_t centerY = fromY + (toY - fromY) * static_cast<int32_t>(progress) / 1800;
+        const bool right = toX >= fromX;
+        const uint8_t hue = static_cast<uint8_t>(elapsedMs / 100U);
+        static const char* const sprite[] = {
+            "....#..", "..####.", ".######", "..####.", "....#.."};
+        for (int16_t y = 0; y < 5; ++y)
+        {
+            for (int16_t x = 0; x < 7; ++x)
+            {
+                const bool tail = x == 0 &&
+                    ((elapsedMs / 180U) % 2U == 0U ? (y == 1 || y == 3) : y == 2);
+                if (sprite[y][x] != '#' && !tail) continue;
+                const CRGB color = x == 5 && y == 2
+                    ? CRGB::White : CRGB(CHSV(hue, 240, 220));
+                plotEffectPixel(centerX + (right ? x - 3 : 3 - x), centerY + y - 2, color);
+            }
+        }
     }
 
     void renderEffect(uint32_t nowMs)
@@ -214,6 +322,12 @@ namespace
                 }
                 break;
             }
+            case Effect::kFireworks:
+                renderFireworks(elapsedMs);
+                break;
+            case Effect::kFish:
+                renderFish(elapsedMs);
+                break;
             case Effect::kCount:
                 Serial.println("Invalid effect index.");
                 ESP_ERROR_CHECK(ESP_ERR_INVALID_STATE);
@@ -226,13 +340,15 @@ namespace
     void printStartupSummary()
     {
         Serial.println("========================================");
-        Serial.println("Stage 4: Local web dashboard and LED effects");
+        Serial.println("Stage 5: Drawing studio and LED effects");
         Serial.println("========================================");
         Serial.printf("Board: ESP32-S3\n");
         Serial.printf("Matrix size: %ux%u\n", MATRIX_WIDTH, MATRIX_HEIGHT);
         Serial.printf("Pixel count: %u\n", PIXEL_COUNT);
         Serial.printf("Startup brightness: %u\n", clampBrightness(STARTUP_BRIGHTNESS));
-        Serial.printf("Max safe brightness: %u/%u (%u%%)\n",
+        Serial.printf("Current brightness: %u | Display: %s\n",
+                      FastLED.getBrightness(), drawingMode ? "drawing" : "effects");
+        Serial.printf("Maximum operating brightness: %u/%u (electrical ceiling: %u%%)\n",
                       MAX_ALLOWED_BRIGHTNESS,
                       MAX_BRIGHTNESS_VALUE,
                       SAFE_BRIGHTNESS_LIMIT_PERCENT);
@@ -428,9 +544,78 @@ bool EffectControl::select(uint8_t index)
 
 void EffectControl::setPlaylistEnabled(bool enabled)
 {
+    if (enabled && drawingMode)
+    {
+        selectEffect(static_cast<uint8_t>(currentEffect));
+    }
     autoPlaylist = enabled;
     lastEffectChangeMs = millis();
     Serial.printf("Automatic playlist: %s\n", enabled ? "enabled" : "disabled");
+}
+
+bool DisplayControl::drawing()
+{
+    return drawingMode;
+}
+
+uint8_t DisplayControl::brightness()
+{
+    return FastLED.getBrightness();
+}
+
+bool DisplayControl::setBrightness(uint16_t value)
+{
+    if (value > MAX_ALLOWED_BRIGHTNESS)
+    {
+        Serial.println("Cannot set brightness: above safe ceiling.");
+        return false;
+    }
+    FastLED.setBrightness(static_cast<uint8_t>(value));
+    FastLED.show();
+    markLedActivity();
+    return true;
+}
+
+bool DisplayControl::applyFrame(const char* hex, size_t length)
+{
+    const auto nibble = [](char c) -> int
+    {
+        if (c >= '0' && c <= '9') return c - '0';
+        if (c >= 'a' && c <= 'f') return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F') return c - 'A' + 10;
+        return -1;
+    };
+    if (hex == nullptr || length != static_cast<size_t>(PIXEL_COUNT) * 6U)
+    {
+        Serial.println("Cannot apply drawing: incorrect frame length.");
+        return false;
+    }
+    for (size_t i = 0; i < length; ++i)
+    {
+        if (nibble(hex[i]) < 0)
+        {
+            Serial.println("Cannot apply drawing: invalid RGB hex data.");
+            return false;
+        }
+    }
+    for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+    {
+        for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+        {
+            const size_t offset = (static_cast<size_t>(y) * MATRIX_WIDTH + x) * 6U;
+            const auto channel = [&](size_t i) -> uint8_t
+            {
+                return static_cast<uint8_t>(nibble(hex[i]) * 16 + nibble(hex[i + 1U]));
+            };
+            setPixel(x, y, CRGB(channel(offset), channel(offset + 2U), channel(offset + 4U)));
+        }
+    }
+    drawingMode = true;
+    autoPlaylist = false;
+    FastLED.show();
+    markLedActivity();
+    Serial.println("Drawing applied; effects paused.");
+    return true;
 }
 
 void setup()
@@ -510,7 +695,7 @@ void loop()
         nowMs = millis();
     }
 
-    if ((nowMs - lastFrameMs) >= EFFECT_FRAME_INTERVAL_MS)
+    if (!drawingMode && (nowMs - lastFrameMs) >= EFFECT_FRAME_INTERVAL_MS)
     {
         lastFrameMs = nowMs;
         renderEffect(nowMs);

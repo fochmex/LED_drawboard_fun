@@ -37,9 +37,7 @@
 // Software brightness limits
 // -----------------------------------------------------------------------------
 
-// Limit global brightness to 78% so the theoretical full-white current remains
-// approximately within the 12 A power-supply limit:
-// 15.36 A * 0.78 = approximately 11.98 A.
+// The electrical ceiling is 78%; the owner's lower operating cap is 70/255.
 // This is a software safeguard, not a replacement for suitable wiring, fusing,
 // power injection, cooling, and electrical protection.
 #define SAFE_BRIGHTNESS_LIMIT_PERCENT 78
@@ -47,14 +45,16 @@
 // FastLED brightness uses an 8-bit value from 0 to 255.
 #define MAX_BRIGHTNESS_VALUE 255
 
-// Highest global brightness value permitted by the configured percentage cap.
-// With a 78% limit: (255 * 78) / 100 = 198.
-#define MAX_ALLOWED_BRIGHTNESS \
+// Keep the operating cap below the independently calculated electrical ceiling.
+#define POWER_BRIGHTNESS_CEILING \
     ((MAX_BRIGHTNESS_VALUE * SAFE_BRIGHTNESS_LIMIT_PERCENT) / 100U)
+#define MAX_ALLOWED_BRIGHTNESS 70
+static_assert(MAX_ALLOWED_BRIGHTNESS <= POWER_BRIGHTNESS_CEILING,
+              "Operating brightness must stay within the electrical ceiling");
 
 // Initial global brightness after startup.
-// 32 of 255 is approximately 12.5%, which provides a conservative startup.
-#define STARTUP_BRIGHTNESS 32
+// 15 of 255 is approximately 5.9%.
+#define STARTUP_BRIGHTNESS 15
 
 // Recommended maximum brightness during the Stage 1 hardware tests.
 // 64 of 255 is approximately 25%.

@@ -18,5 +18,5 @@ enum class RotationMode : uint8_t
 
 constexpr MatrixWiringMode MATRIX_WIRING_MODE = MatrixWiringMode::kSerpentine;
 constexpr RotationMode MATRIX_ROTATION = RotationMode::kNone;
-constexpr bool MATRIX_MIRROR_X = false;
+constexpr bool MATRIX_MIRROR_X = true;
 constexpr bool MATRIX_MIRROR_Y = false;

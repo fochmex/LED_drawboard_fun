@@ -9,6 +9,8 @@ This repository is now intentionally following a phased implementation plan. The
 **Stage 1: Basic LED Control - COMPLETED.**
 **Stage 2: Power System - COMPLETED.**
 **Stage 3: Wi-Fi and Networking - IMPLEMENTED AND ACCEPTED.**
+**Stage 4: Basic Web Server - IMPLEMENTED AND ACCEPTED.**
+**Stage 5: Drawing Interface - IMPLEMENTED AND ACCEPTED.**
 
 Completion confirmed by the hardware owner on 2026-11-17: the LED panel and
 sleep/wake work, the fuse and 5 V supply are connected and working, and the
@@ -17,9 +19,13 @@ not new current or voltage-drop measurements by the firmware.
 
 Stage 3 accepted by the hardware owner on 2026-11-17 after four successful
 sleep/wake retests with Wi-Fi. The current firmware adds Stage 4: a local status
-dashboard, effect selection, and playlist toggle. Stage 4 is implemented,
-pending on-device browser and regression tests. Drawing and WebSockets remain
-later milestones.
+dashboard, effect selection, and playlist toggle. Stage 4 and its dropdown
+polling fix were accepted by the hardware owner on 2026-11-17. This records
+owner acceptance, not independent execution of every checklist item.
+Stage 5 (drawing interface) was accepted by the hardware owner on 2026-11-18,
+including the drawing/wake corrections and expanded effects catalogue.
+This records owner acceptance, not independent execution of every checklist item.
+Stage 6 (live communication / WebSockets) is next and has not started.
 
 The design is intentionally tight and test-driven:
 - verify one RGB LED works on the selected data line
@@ -54,14 +60,15 @@ time in RTC memory. This survives deep sleep, not power removal.
 
 ## LED effects playground (before Stage 3)
 
-The old repeating hardware test is replaced by six animated effects:
-rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves.
+The old repeating hardware test is replaced by eight animated effects:
+rainbow, confetti, comet, plasma, bouncing scanner, ocean waves, fireworks,
+and color-changing fish. The final two were added after Stage 5 owner testing.
 
 - Effects change automatically every 20 seconds when the playlist is enabled.
 - A short GPIO14 button press advances on release and restarts the 20-second timer.
 - A 5-second hold requests sleep instead of skipping an effect.
 - Rendering is scheduled every 20 ms without blocking animation delays.
-- Startup brightness remains 32/255; the existing 198/255 ceiling is unchanged.
+- Startup brightness is now 15/255 with a 70/255 operating cap (owner update).
 - Animations count as LED activity, so the unchanged 60-minute idle timeout
   does not expire while effects are playing.
 
@@ -71,9 +78,9 @@ All six effects were confirmed working by the hardware owner on 2026-11-17.
 
 ### Recorded requirement: web effect selection
 
-The Stage 4 local web interface now allows selection of all six existing effects
+The local web interface now allows selection of all eight existing effects
 by name: rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves.
-It includes a choice between playing one selected effect and the automatic
+The catalogue also includes fireworks and color-changing fish. It includes a choice between playing one selected effect and the automatic
 playlist. Physical button controls, brightness ceiling, and sleep/wake are
 retained. Web controls were brought forward from Stage 5 by owner request.
 
@@ -149,7 +156,7 @@ does not separately document router-outage or DHCP-reservation testing):
   resumes the selected effect and reconnects when the network is available.
 - With a DHCP reservation configured, the same address is assigned after reboot.
 
-## Stage 4: Local web dashboard - IMPLEMENTED, HARDWARE CHECKS PENDING
+## Stage 4: Local web dashboard - IMPLEMENTED AND ACCEPTED
 
 Open `http://<board IP>/` from a phone or computer on the same LAN; use HTTP,
 not HTTPS. The serial monitor prints `[HTTP] Dashboard: http://.../`.
@@ -180,7 +187,7 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 
 - `GET /`: dashboard.
 - `GET /api/status`: JSON status plus `{id,name}` effect catalogue.
-- `POST /api/effect`: form field `id`, exactly one canonical integer 0 through 5.
+- `POST /api/effect`: form field `id`, exactly one canonical integer 0 through 7.
   Selects the effect and disables the automatic playlist.
 - `POST /api/playlist`: form field `enabled`, exactly `true` or `false`.
 - POST controls require `X-Drawboard-Control: 1`. Successful commands return
@@ -190,7 +197,7 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 ### Stage 4 acceptance checks
 
 1. Open the dashboard using the serial IP from desktop and phone browsers.
-2. Select each of six effects and check the physical panel matches the name.
+2. Select each of eight effects and check the physical panel matches the name.
 3. Keep single-effect mode for more than 20 seconds; it must not auto-advance.
 4. Enable the playlist and verify 20-second advances and wraparound.
 5. Short-press the button in both modes; the page must report the new effect.
@@ -199,7 +206,7 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 7. Interrupt Wi-Fi, then restore it: dashboard reports unavailability and recovers.
 8. Send invalid control values/missing headers: reject without changing playback.
 9. Keep the page open while effects run; check button response and reset-free
-   operation over several cycles. Brightness remains 32 with ceiling 198.
+   operation over several cycles. Current startup brightness is 15 with cap 70.
 
 ### Hardware feedback and Stage 4 UI fix (2026-11-17)
 
@@ -222,14 +229,157 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
   retention, all six effect commands, command locking, stale success/error
   rejection, focused checkbox preservation, and offline/recovery handling.
   Native browser click automation timed out; desktop/phone menu interaction and
-  physical panel acceptance still require the owner's hardware test.
+  physical panel acceptance were left for the owner's hardware test.
+- The owner subsequently confirmed "it works" and requested Stage 5 on
+  2026-11-17. Stage 4 is accepted, including the dropdown polling fix.
+
+## Stage 5: Drawing interface - IMPLEMENTED AND ACCEPTED
+
+The owner chose browser-local editing followed by an explicit **Apply drawing**
+command. No WebSockets or flash persistence are added in this stage.
+
+- A 16 x 16 grid supports mouse/touch strokes, interpolated lines, a color picker,
+  1/2/3-pixel square brushes, eraser, clear, and fill. Keyboard users can move
+  with arrows and paint with Space/Enter. Top-left is (0, 0), X right, Y down.
+  The firmware maps row-major browser colors through the existing serpentine
+  coordinate mapping.
+- Clear/fill/paint change only the browser draft, even when offline. Apply sends
+  one complete frame and switches to static drawing mode with playlist disabled.
+  Validate the whole payload before touching any pixel, so malformed frames
+  cannot partially change the display. Pending commands are not duplicated.
+- Drawing drafts are not synchronized with board status or other browsers and
+  are lost on page reload. Applied drawings remain on the board until replaced
+  by another drawing or an effect. Keeping a browser draft lets it be reapplied.
+- Selecting an effect, enabling the playlist, or a physical short press exits
+  drawing mode. A short press advances the remembered effect and preserves the
+  disabled playlist. Disabling the playlist alone does not exit drawing mode.
+- Brightness is an explicit integer command, allowed from 0 to 70 inclusive.
+  The owner requested startup 15 and operating cap 70. Zero hides, but does not erase,
+  framebuffer contents. Status reports actual brightness, not the startup constant.
+- Current framebuffer, drawing mode, and brightness survive deep sleep via RTC.
+  Power removal restores the startup effect/playlist and brightness.
+  A static drawing now allows the existing 60-minute idle sleep timer to expire.
+  Applied frames/brightness reset that timer; status reads and local edits do not.
+
+### Stage 5 API additions
+
+- `POST /api/frame`: exactly one form field `pixels` with 1536 hexadecimal digits:
+  256 consecutive `RRGGBB` colors, no `#`, separators, or whitespace.
+  Order is left-to-right, top-to-bottom. Both hex cases are accepted.
+- `POST /api/brightness`: exactly one form field `value`, a canonical decimal
+  integer from `0` through `70`; no signs, spaces, leading zeros, or fractions.
+- Both require the existing `X-Drawboard-Control: 1` header and return status
+  JSON on success; missing header is 403 and invalid input is 400.
+- `GET /api/status` adds boolean `drawing` and reports the current `brightness`.
+  The existing `effect` remains the remembered effect even while drawing.
+  Existing effect/playlist endpoints remain available.
+
+### Stage 5 acceptance checks
+
+1. On desktop and phone, paint individual cells, diagonal strokes, brush sizes,
+   eraser, clear, and fill. No physical change until Apply.
+2. Apply distinct colors to (0,0), (15,0), (0,1), and (15,15); verify panel
+   orientation and alternating row mapping. Test red, green, and blue channels.
+3. Keep a drawing displayed for more than 20 seconds; no effect should overwrite it.
+4. Apply another drawing, select an effect, enable the playlist, and short-press
+   the physical button. Verify mode transitions and existing effect playback.
+5. Test brightness 0, 15, and 70. Verify
+   zero retains the image when brightness is raised again. Reject 71/255,
+   negative/fractional values, and malformed frames without display changes.
+6. Sleep/wake with a drawing and nondefault brightness: dark while sleeping,
+   same image/mode/brightness on wake, browser reconnects, and button works.
+7. Interrupt Wi-Fi while editing: draft is retained, Apply is disabled after
+   connectivity failure, and reconnect does not discard the draft or selection.
+8. Apply repeatedly while status polling; no duplicate commands or stale
+   mode/brightness updates. Refreshing the page starts a new blank local draft,
+   without clearing the physical image.
+
+### Stage 5 software validation
+
+- ESP32-S3 PlatformIO build passed: RAM 46,948 bytes; flash 835,845 bytes.
+- Isolated browser execution of the embedded script passed grid initialization,
+  keyboard painting, clipped 2/3-pixel brushes, eraser, line interpolation,
+  clear/fill, exact 1536-digit RGB submission, Apply-only transmission, duplicate
+  suppression, and retaining edits made while an Apply is pending.
+- Script checks passed all six effect commands, brightness 0/32/198 and invalid
+  browser values, pending selections through polling, stale read rejection,
+  offline editing/recovery, and a 390-pixel layout without horizontal overflow.
+- Synthetic pointer checks covered stroke continuation, pointer-up/cancel, and
+  row-edge clipping; pointer capture was stubbed for these synthetic events.
+  Native click/screenshot automation remained unresponsive in the shared browser.
+  Real desktop/phone gestures, HTTP validation on the device, LED mapping,
+  brightness output, and sleep/wake require the hardware checks above.
+
+### Stage 5 owner feedback and corrections
+
+- Owner confirmed drawing, switching back to effects, and static display for
+  more than 20 seconds. The corrections below preceded final Stage 5 acceptance.
+- Reduced startup brightness from 32 to 15 and operating maximum from 198 to
+  70, both on the 0-255 scale. The calculated electrical ceiling remains separate.
+- Owner observed browser top-left lighting physical top-right. Enabled the
+  existing X-mirror setting and applied mirror transforms in the coordinate
+  mapper before serpentine indexing. This corrects logical coordinates for
+  drawings and coordinate-based effects; Y orientation remains unchanged.
+- Wake clarification: the drawing was visible before sleep, but the panel was
+  dark on wake. An additional button press then started an effect. This does
+  not establish that wake itself changed modes. A trial of repeated static-frame
+  transmission did not resolve the fault; owner logs confirmed drawing mode and
+  brightness 15 survived, while the panel stayed dark.
+- Root cause found in installed FastLED 3.10.9: the non-AVR `CRGB` default
+  constructor zeros all channels. The RTC `CRGB` array was reconstructed during
+  startup, clearing retained pixels while primitive mode/brightness survived.
+  Retained pixels now use a raw byte array sized to the framebuffer, with no
+  class constructor. Save/restore copy the same framebuffer bytes.
+  Removed the ineffective repeated static refresh. Wake diagnostics now include
+  the number of nonblack pixels as well as mode and brightness. Retest a drawing
+  with known colored pixels through several sleep/wake cycles.
+- Raw-byte retention fix builds successfully (flash 835,969 bytes; RAM 46,948
+  bytes). ELF symbols confirm both live and RTC framebuffers are 768 bytes,
+  with retained data in RTC memory. Physical wake restoration was subsequently
+  confirmed by the owner.
+- The owner subsequently confirmed drawing restoration after sleep/wake works.
+
+### Additional effects after Stage 5 testing
+
+- IDs 0-5 are unchanged. Added ID 6 **Fireworks** and ID 7
+  **Color-changing fish** to the shared catalogue; the web selector, button
+  cycling, playlist, API validation, and RTC effect range use that catalogue.
+- Fireworks repeat a 2.8-second sequence: ascending rocket, colorful expanding
+  sparks with downward drift and fading brightness, then a short black pause.
+  Burst positions and colors vary between launches.
+- The fish is a 7 x 5 sprite with a white eye and animated tail. It moves between
+  bounded pseudo-random waypoints every 1.8 seconds, faces horizontal travel,
+  and shifts body hue slowly over approximately 25.6 seconds.
+- Both effects clear the framebuffer each frame. Only the current rocket/sparks
+  or fish pixels are lit; empty background is exactly black, with no trails.
+- Positions and colors derive from effect elapsed time, preserving motion phase
+  through the existing RTC sleep/wake path without new retained class objects.
+  Startup 15 and cap 70 remain unchanged. The owner accepted Stage 5 on
+  2026-11-18 after these additions.
+- Validation: ESP32-S3 build passed (flash 837,061 bytes, RAM 46,948 bytes).
+  Catalogue checks preserved IDs 0-5 and verified all eight names. Source checks
+  confirmed both renderers clear to black and contain no blocking delay.
+  Geometry/timing models sampled 9,000 frames per effect: the fish stayed fully
+  within the grid with 17-18 lit pixels, visited 110 positions, and faced both
+  directions; rocket heights and spark brightness stayed within their ranges.
+  These model checks are not a physical rendering test.
+- On the panel, select each new effect individually. Check black background
+  with no trails, rising/exploding fireworks, recognizable fish and slow color
+  change, movement to both sides, playlist wrap after eight effects, and
+  sleep/wake restoration. Keep brightness at the existing 15/70 settings.
+- Updated firmware build passed (flash 835,945 bytes, RAM 46,948 bytes).
+  Config/UI default checks and an exhaustive 256-coordinate mirrored-serpentine
+  model passed. These checks do not replace physical orientation/wake tests.
 
 ## Power-limit note
 The project uses a Mean Well LPV-100-5 5 V power supply with a 12 A maximum output. A full-white 16x16 WS2812B matrix can theoretically require:
 
 256 LEDs × 60 mA = 15.36 A
 
-This is above the supply capability, so the firmware enforces a software brightness limit of 78% of full scale. The configured maximum brightness is `MAX_ALLOWED_BRIGHTNESS = 198/255`, which keeps the matrix below the 12 A ceiling while still providing strong output.
+The electrical calculation permits at most 198/255 (78% before integer rounding).
+The owner's lower operating cap is now `MAX_ALLOWED_BRIGHTNESS = 70/255`,
+with startup 15/255. A compile-time check keeps the operating cap below the
+calculated electrical ceiling. The lower cap applies to commands and RTC restore.
 
 The design intent is:
 - keep the matrix within the safe power envelope of the LPV-100-5
@@ -294,17 +444,17 @@ configured maximum brightness. Original power-system checklist for reference:
 - preserve effects, button response, and deep-sleep behavior
 - router-side DHCP reservation
 
-### Stage 4: Basic web server - IMPLEMENTED, HARDWARE CHECKS PENDING
+### Stage 4: Basic web server - IMPLEMENTED AND ACCEPTED
 - status page
 - device information
 - matrix status and Wi‑Fi state
 - named effect selection and automatic-playlist toggle (brought forward)
 
-### Stage 5: Drawing interface
+### Stage 5: Drawing interface - IMPLEMENTED AND ACCEPTED
 - 16x16 browser grid
 - color and brush tools
 - clear/fill/erase and brightness control
-- select any of the six validated LED effects by name
+- select any of the eight LED effects by name (six original, two added later)
 - select a single effect or automatic playlist playback
 
 ### Stage 6: Live communication

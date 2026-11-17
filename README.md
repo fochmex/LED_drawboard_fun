@@ -15,15 +15,24 @@ The software goal is straightforward:
 Stages 1 (LED hardware) and 2 (power system) are complete, as confirmed by the
 hardware owner. The firmware now combines the LED effects playground with
 Stage 3 Wi-Fi networking, accepted after four sleep/wake retests. Stage 4 now
-adds a local web dashboard with status, effect selection, and a playlist toggle;
-on-device browser acceptance is pending.
+adds a local web dashboard with status, effect selection, and a playlist toggle,
+accepted by the owner including the dropdown fix. Stage 5 now adds a drawing
+studio and safe brightness control, accepted by the owner on 2026-11-18.
+Stage 6 live communication / WebSockets is next and has not started.
 
 ### LED effects playground
 
-Rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves cycle every
+Rainbow, confetti, comet, plasma, bouncing scanner, ocean waves, fireworks,
+and color-changing fish cycle every
 20 seconds. Short-press the GPIO14 button to advance; hold for 5 seconds and
 release to sleep, then press again to wake. Brightness limits and the validated
 sleep data-pin hold remain unchanged. See [controls and testing](README_STAGE1.md).
+
+**Fireworks** launches colored rockets into expanding, falling sparks.
+**Color-changing fish** swims between pseudo-random positions, wags its tail,
+faces its travel direction, and slowly changes color. Both clear the background
+to black every frame, so only the rocket/sparks or fish are lit, with no trails.
+All eight effects appear automatically in the web selector and playlist.
 
 ### Stage 3 Wi-Fi setup
 
@@ -43,7 +52,7 @@ credentials produce a clear message and leave effects running offline.
 ### Stage 4 web dashboard
 
 After uploading, open **`http://<printed IP>/`** from the same LAN. For the last
-reported address this is `http://192.168.179.24/`; check serial for the current
+reported reserved address this is `http://192.168.178.152/`; check serial for the current
 `[HTTP] Dashboard` URL. Use HTTP, not HTTPS. `led-drawboard.local` is not configured.
 
 - Select an effect and click **Play selected effect** to stay on that effect.
@@ -52,7 +61,36 @@ reported address this is `http://192.168.179.24/`; check serial for the current
   and playlist mode survive deep sleep, but not a power cycle.
 - Status updates every 2 seconds; the page reports unavailability during sleep
   or network loss and recovers after reconnection at the same IP.
-- Brightness is read-only and unchanged. Drawing and WebSockets are not included.
+- Background polling does not disable healthy controls or replace pending choices.
+- Stage 5 adds drawing and brightness controls below; WebSockets remain Stage 6.
+
+### Stage 5 drawing studio
+
+- Choose a color, brush size (1, 2 x 2, or 3 x 3), and Brush or Eraser.
+  Paint the 16 x 16 grid with a mouse or finger. Arrow keys move keyboard focus;
+  Space or Enter paints. Top-left is (0, 0), with X to the right and Y down.
+- **Clear draft** and **Fill with color** only edit the browser preview.
+  **Apply drawing** sends the entire image in one HTTP command and pauses effects.
+  Until Apply succeeds, the LEDs keep showing their previous content.
+- Browser drafts remain editable while offline, but sending is disabled.
+  Drafts are not saved on reload or synchronized across pages. This stage does
+  not read the displayed image back into a new browser session.
+- **Set brightness** applies an integer from 0 to the unchanged safe ceiling
+  of 70/255, for both drawings and effects. Startup is 15/255. Zero makes
+  the panel dark without clearing its pixels. The board rejects unsafe values.
+- Select an effect or enable the playlist to leave drawing mode. A physical
+  short press goes to the next effect with the playlist still disabled.
+- The displayed image, drawing/effect mode, and brightness survive deep sleep
+  in RTC memory, not power removal. A static drawing sleeps after 60 minutes
+  without LED activity; the same GPIO14 long-hold/release and wake gesture works.
+  Returning to effects replaces the displayed drawing; retain its browser draft
+  to apply it again. Flash storage and WebSockets are later milestones.
+- The panel's horizontal orientation is corrected in the firmware mapping:
+  the browser's top-left pixel should now light the panel's top-left pixel.
+  RTC pixels are stored as raw bytes so FastLED's pixel constructors cannot clear
+  the retained drawing during wake startup. After wake, serial reports
+  `Restored RTC display: drawing`, brightness, and the number of colored pixels.
+  The owner confirmed corrected drawing restoration after sleep/wake works.
 
 No login or HTTPS is provided: use a trusted LAN and **do not port-forward** this
 device. Credentials are not exposed by the page. The small synchronous server
@@ -80,7 +118,7 @@ See [Stage 4 API and acceptance checks](PROJECT_STAGES.md).
 - Data signal passes through a 3.3 V to 5 V logic level shifter
 - 300 Ω to 500 Ω series resistor recommended on the LED data line
 - LED power is not sourced through the ESP32 board headers
-- Startup brightness is set to 32 for safe validation tests
+- Startup brightness is 15/255, with an owner-selected operating cap of 70/255
 - The supply is a Mean Well LPV-100-5, 5 V / 12 A max. A full-white 16x16 WS2812B matrix can theoretically draw 256 × 60 mA = 15.36 A, which exceeds the supply limit, so the firmware enforces a software brightness ceiling to protect the system.
 - A 12A fuse will be used on the +5V output of the LPV 100 5 
 
@@ -602,8 +640,9 @@ The completed Stage 1 firmware validated:
 Stages 1 and 2 are complete based on hardware-owner acceptance on 2026-11-17:
 LED operation and sleep/wake work, the fuse and 5 V supply are connected, and
 the current brightness limit is correct. The firmware now plays LED effects
-and implements accepted Stage 3 networking plus the Stage 4 dashboard,
-pending on-device web acceptance checks. No new electrical measurements are claimed.
+and implements accepted Stage 3 networking, Stage 4 dashboard, and Stage 5 drawing
+interface. Stage 5 was accepted by the owner on 2026-11-18, including the wake
+correction and expanded effects. No new electrical measurements are claimed.
 
 The design principle is to avoid adding Wi‑Fi, browser features, or storage functionality until the display hardware is proven stable. Only after the matrix is electrically sound and correctly mapped should software complexity increase.
 
@@ -645,13 +684,13 @@ brightness cap. Original checklist retained for reference:
 - reconnect behavior and resilience
 - DHCP reservation and network stability
 
-### Stage 4: Basic web server - IMPLEMENTED, HARDWARE CHECKS PENDING
+### Stage 4: Basic web server - IMPLEMENTED AND ACCEPTED
 - device status page
 - device information and Wi‑Fi state
 - matrix health and reporting endpoints
 - effect selection and automatic-playlist toggle
 
-### Stage 5: Drawing interface
+### Stage 5: Drawing interface - IMPLEMENTED AND ACCEPTED
 - 16x16 browser grid
 - color selection
 - touch and mouse drawing
