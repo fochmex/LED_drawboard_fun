@@ -13,8 +13,10 @@ The software goal is straightforward:
 - keep the final system self-hosted and local-only, without requiring cloud services
 
 Stages 1 (LED hardware) and 2 (power system) are complete, as confirmed by the
-hardware owner. The firmware now offers an offline LED effects playground
-before Stage 3 networking begins.
+hardware owner. The firmware now combines the LED effects playground with
+Stage 3 Wi-Fi networking, accepted after four sleep/wake retests. Stage 4 now
+adds a local web dashboard with status, effect selection, and a playlist toggle;
+on-device browser acceptance is pending.
 
 ### LED effects playground
 
@@ -22,6 +24,40 @@ Rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves cycle every
 20 seconds. Short-press the GPIO14 button to advance; hold for 5 seconds and
 release to sleep, then press again to wake. Brightness limits and the validated
 sleep data-pin hold remain unchanged. See [controls and testing](README_STAGE1.md).
+
+### Stage 3 Wi-Fi setup
+
+1. Copy [`include/secrets.example.h`](include/secrets.example.h) to
+   `include/secrets.h` and enter your 2.4 GHz Wi-Fi credentials only in the copy.
+   The local copy is ignored by Git; do not put real credentials in the example.
+2. Build and upload using PlatformIO, then open the serial monitor at 115200 baud.
+3. Look for `[WiFi] Connected` with IP address, RSSI, and station MAC.
+   The hostname is `led-drawboard`.
+4. Optionally reserve that station MAC's IP in your router's DHCP settings.
+
+Effects and button controls keep running during connection attempts. Each attempt
+has a 15-second timeout; retries back off from 5 seconds up to 60 seconds.
+The board reconnects after network loss or button wake. Missing or placeholder
+credentials produce a clear message and leave effects running offline.
+
+### Stage 4 web dashboard
+
+After uploading, open **`http://<printed IP>/`** from the same LAN. For the last
+reported address this is `http://192.168.179.24/`; check serial for the current
+`[HTTP] Dashboard` URL. Use HTTP, not HTTPS. `led-drawboard.local` is not configured.
+
+- Select an effect and click **Play selected effect** to stay on that effect.
+- Enable **Automatic playlist** to advance every 20 seconds.
+- The physical button still skips effects and handles sleep/wake. Selection
+  and playlist mode survive deep sleep, but not a power cycle.
+- Status updates every 2 seconds; the page reports unavailability during sleep
+  or network loss and recovers after reconnection at the same IP.
+- Brightness is read-only and unchanged. Drawing and WebSockets are not included.
+
+No login or HTTPS is provided: use a trusted LAN and **do not port-forward** this
+device. Credentials are not exposed by the page. The small synchronous server
+serves one client at a time; slow requests may briefly delay LED/button updates.
+See [Stage 4 API and acceptance checks](PROJECT_STAGES.md).
 
 ## Hardware overview
 
@@ -565,8 +601,9 @@ The completed Stage 1 firmware validated:
 
 Stages 1 and 2 are complete based on hardware-owner acceptance on 2026-11-17:
 LED operation and sleep/wake work, the fuse and 5 V supply are connected, and
-the current brightness limit is correct. The firmware now plays LED effects;
-Stage 3 networking has not started. No new electrical measurements are claimed.
+the current brightness limit is correct. The firmware now plays LED effects
+and implements accepted Stage 3 networking plus the Stage 4 dashboard,
+pending on-device web acceptance checks. No new electrical measurements are claimed.
 
 The design principle is to avoid adding Wi‑Fi, browser features, or storage functionality until the display hardware is proven stable. Only after the matrix is electrically sound and correctly mapped should software complexity increase.
 
@@ -602,16 +639,17 @@ brightness cap. Original checklist retained for reference:
 - safe brightness limits
 - confirm firmware brightness cap stays below the Mean Well 12 A limit
 
-### Stage 3: Wi‑Fi and networking
+### Stage 3: Wi‑Fi and networking - IMPLEMENTED AND ACCEPTED
 - connect to the local router
 - display assigned IP address
 - reconnect behavior and resilience
 - DHCP reservation and network stability
 
-### Stage 4: Basic web server
+### Stage 4: Basic web server - IMPLEMENTED, HARDWARE CHECKS PENDING
 - device status page
 - device information and Wi‑Fi state
 - matrix health and reporting endpoints
+- effect selection and automatic-playlist toggle
 
 ### Stage 5: Drawing interface
 - 16x16 browser grid
@@ -653,6 +691,7 @@ Key project files:
 - `include/MatrixConfig.h` — wiring and rotation settings
 - `include/secrets.example.h` — example secrets template
 - `src/main.cpp` — LED effects, button controls, and sleep/wake logic
+- `src/NetworkManager.cpp` — Wi-Fi connection, diagnostics, retries, and shutdown
 - `README_STAGE1.md` — effects controls and hardware validation documentation
 - `README.md` — project overview and hardware/software context
 
@@ -674,6 +713,8 @@ This project is built with:
 6. Verify the serial monitor shows the safe brightness cap and the project remains under the 12 A supply limit.
 7. Watch the effects playlist and effect names in the serial monitor; short-press
    to skip, or hold for 5 seconds and release to sleep.
+8. Confirm the Wi-Fi connection reports an IP address, then test router loss,
+   reconnection, and sleep/wake as described in `PROJECT_STAGES.md`.
 
 ## Technical summary
 

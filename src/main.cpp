@@ -7,6 +7,9 @@
 #include "ProjectConfig.h"
 #include "PinConfig.h"
 #include "MatrixConfig.h"
+#include "NetworkManager.h"
+#include "EffectControl.h"
+#include "WebDashboard.h"
 
 namespace
 {
@@ -33,6 +36,7 @@ namespace
     uint32_t effectStartMs = 0;
     uint32_t lastEffectChangeMs = 0;
     uint32_t lastFrameMs = 0;
+    bool autoPlaylist = true;
 
     // Updated whenever the LED content changes. Used for the automatic
     // idle-to-deep-sleep timeout.
@@ -45,6 +49,7 @@ namespace
     static RTC_DATA_ATTR bool rtcFrameValid = false;
     static RTC_DATA_ATTR uint8_t rtcEffect = 0;
     static RTC_DATA_ATTR uint32_t rtcEffectElapsedMs = 0;
+    static RTC_DATA_ATTR bool rtcAutoPlaylist = true;
 
     void markLedActivity()
     {
@@ -63,6 +68,7 @@ namespace
         std::memcpy(rtcLastFrame, leds, sizeof(leds));
         rtcEffect = static_cast<uint8_t>(currentEffect);
         rtcEffectElapsedMs = millis() - effectStartMs;
+        rtcAutoPlaylist = autoPlaylist;
         rtcFrameValid = true;
     }
 
@@ -78,6 +84,7 @@ namespace
 
         std::memcpy(leds, rtcLastFrame, sizeof(leds));
         currentEffect = static_cast<Effect>(rtcEffect);
+        autoPlaylist = rtcAutoPlaylist;
         effectStartMs = millis() - rtcEffectElapsedMs;
         FastLED.show();
         markLedActivity();
@@ -130,14 +137,19 @@ namespace
         markLedActivity();
     }
 
-    void nextEffect()
+    void selectEffect(uint8_t index)
     {
-        currentEffect = static_cast<Effect>(
-            (static_cast<uint8_t>(currentEffect) + 1U) % static_cast<uint8_t>(Effect::kCount));
+        currentEffect = static_cast<Effect>(index);
         effectStartMs = millis();
         lastEffectChangeMs = effectStartMs;
         FastLED.clear(false);
         Serial.printf("Effect: %s\n", effectNames[static_cast<uint8_t>(currentEffect)]);
+    }
+
+    void nextEffect()
+    {
+        selectEffect((static_cast<uint8_t>(currentEffect) + 1U) %
+                     static_cast<uint8_t>(Effect::kCount));
     }
 
     void renderEffect(uint32_t nowMs)
@@ -214,7 +226,7 @@ namespace
     void printStartupSummary()
     {
         Serial.println("========================================");
-        Serial.println("Stages 1 and 2 complete: LED effects playground");
+        Serial.println("Stage 4: Local web dashboard and LED effects");
         Serial.println("========================================");
         Serial.printf("Board: ESP32-S3\n");
         Serial.printf("Matrix size: %ux%u\n", MATRIX_WIDTH, MATRIX_HEIGHT);
@@ -237,6 +249,7 @@ namespace
                       static_cast<unsigned>(Effect::kCount), EFFECT_FRAME_INTERVAL_MS, EFFECT_DURATION_MS);
         Serial.printf("Effect: %s\n", effectNames[static_cast<uint8_t>(currentEffect)]);
         Serial.println("Short button press: next effect");
+        Serial.printf("Automatic playlist: %s\n", autoPlaylist ? "enabled" : "disabled");
         Serial.println("Wake/sleep: hold for 5 seconds, then release to sleep; press again to wake");
         Serial.printf("Button raw level: %s (released=HIGH, pressed=LOW)\n",
                       digitalRead(WAKE_BUTTON_PIN) == LOW ? "LOW" : "HIGH");
@@ -304,8 +317,12 @@ namespace
         clearMatrix();
         FastLED.show();
 
-        // Let the black frame latch before taking the data pin away from FastLED.
-        delay(1);
+        // Never reroute GPIO4 while the RMT peripheral is still transmitting.
+        if (!FastLED.wait(1000))
+        {
+            Serial.println("LED transmission did not finish; staying awake instead of changing GPIO4.");
+            return;
+        }
         const gpio_num_t dataPin = static_cast<gpio_num_t>(LED_DATA_PIN);
         ESP_ERROR_CHECK(rtc_gpio_init(dataPin));
         ESP_ERROR_CHECK(rtc_gpio_set_level(dataPin, 0));
@@ -314,6 +331,8 @@ namespace
         ESP_ERROR_CHECK(rtc_gpio_hold_en(dataPin));
         digitalWrite(LED_STATUS_PIN, LOW);
 
+        WebDashboard::stop();
+        NetworkManager::stop();
         Serial.println("Entering deep sleep. Press GPIO14 button to wake.");
         Serial.flush();
         esp_deep_sleep_start();
@@ -373,6 +392,45 @@ namespace
             enterDeepSleep();
         }
     }
+}
+
+uint8_t EffectControl::count()
+{
+    return static_cast<uint8_t>(Effect::kCount);
+}
+
+const char* EffectControl::name(uint8_t index)
+{
+    return index < count() ? effectNames[index] : nullptr;
+}
+
+uint8_t EffectControl::selected()
+{
+    return static_cast<uint8_t>(currentEffect);
+}
+
+bool EffectControl::playlistEnabled()
+{
+    return autoPlaylist;
+}
+
+bool EffectControl::select(uint8_t index)
+{
+    if (index >= count())
+    {
+        Serial.println("Cannot select effect: invalid index.");
+        return false;
+    }
+    selectEffect(index);
+    setPlaylistEnabled(false);
+    return true;
+}
+
+void EffectControl::setPlaylistEnabled(bool enabled)
+{
+    autoPlaylist = enabled;
+    lastEffectChangeMs = millis();
+    Serial.printf("Automatic playlist: %s\n", enabled ? "enabled" : "disabled");
 }
 
 void setup()
@@ -435,14 +493,18 @@ void setup()
     lastEffectChangeMs = millis();
     lastFrameMs = millis();
     lastActivityMs = millis();
+    WebDashboard::begin();
+    NetworkManager::begin();
 }
 
 void loop()
 {
     handleWakeButtonSleepInput();
+    NetworkManager::update();
+    WebDashboard::update();
 
     uint32_t nowMs = millis();
-    if ((nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
+    if (autoPlaylist && (nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
     {
         nextEffect();
         nowMs = millis();

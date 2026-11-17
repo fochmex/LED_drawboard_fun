@@ -2,7 +2,10 @@
 
 Stages 1 and 2 were accepted by the hardware owner on 2026-11-17. LED control,
 sleep/wake, the connected fuse and 5 V supply, and the existing brightness
-limit are confirmed working. Stage 3 networking has not started.
+limit are confirmed working. Stage 3 Wi-Fi networking is accepted after four
+sleep/wake retests. Stage 4 adds a local web dashboard, pending device acceptance.
+See [network and dashboard setup](PROJECT_STAGES.md);
+effects and button controls remain available while connecting or offline.
 
 ## LED effects and controls
 
@@ -15,7 +18,8 @@ The firmware now plays this repeating playlist instead of the hardware tests:
 5. **Bouncing scanner:** a colored vertical bar sweeping left and right.
 6. **Ocean waves:** moving blue/green brightness waves.
 
-Effects change automatically every **20 seconds**. **Short-press and release**
+Effects change automatically every **20 seconds** by default. The web dashboard
+can select a single effect or toggle the automatic playlist. **Short-press and release**
 the GPIO14 button to skip to the next effect and restart that timer. The serial
 monitor prints the effect name. Frames are scheduled every 20 ms; button polling
 continues between frames.
@@ -38,7 +42,7 @@ some pairs of legs are permanently connected.
    pattern pauses while the firmware waits for release.
 4. Release. Confirm `Entering deep sleep`, the panel turns off, and tests stop.
 5. Press again to wake. Confirm `Wake reason: external wake button`. The saved
-   frame and effect are restored; release before starting another gesture.
+   frame, effect, and playlist mode are restored; release before another gesture.
    The wake press does not skip an effect. Animation resumes with a fresh
    20-second automatic-cycle timer. A power cycle starts again at rainbow.
 
@@ -50,6 +54,12 @@ Before sleep, the firmware sends an all-off frame, waits for it to latch, and
 holds GPIO4 LOW using the RTC GPIO hold. The hold is released before FastLED
 initializes on wake. This prevents a floating level-shifter input from sending
 spurious data to the still-powered LEDs during sleep.
+
+The PlatformIO build selects `FL_RMT4_ASYNC=0` so FastLED completes each frame
+without a background RMT transmission worker. Sleep also explicitly checks
+`FastLED.wait(1000)` before rerouting GPIO4; a failed completion leaves the
+device awake and reports an error. Do not replace this check with a 1 ms delay:
+transmitting 256 RGB pixels alone takes about 7.7 ms.
 
 Check several sleep/wake cycles, starting from different effects.
 All 256 LEDs should remain dark throughout sleep, then the saved frame

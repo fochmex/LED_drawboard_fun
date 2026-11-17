@@ -72,3 +72,12 @@
 // UL forces unsigned long arithmetic, which prevents 16-bit integer overflow
 // on Arduino-compatible targets when calculating milliseconds.
 #define IDLE_SLEEP_TIMEOUT_MS (60UL * 60UL * 1000UL)
+
+// -----------------------------------------------------------------------------
+// Local Wi-Fi networking
+// -----------------------------------------------------------------------------
+
+#define WIFI_HOSTNAME "led-drawboard"
+#define WIFI_CONNECT_TIMEOUT_MS 15000UL
+#define WIFI_RETRY_INITIAL_MS 5000UL
+#define WIFI_RETRY_MAX_MS 60000UL
