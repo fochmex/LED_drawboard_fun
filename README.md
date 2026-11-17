@@ -12,7 +12,16 @@ The software goal is straightforward:
 - build a foundation for local web control, drawing tools, animation, and persistence
 - keep the final system self-hosted and local-only, without requiring cloud services
 
-The repository currently focuses on Stage 1: proving the hardware is correct and stable before moving to Wi‑Fi, the web UI, and later product features.
+Stages 1 (LED hardware) and 2 (power system) are complete, as confirmed by the
+hardware owner. The firmware now offers an offline LED effects playground
+before Stage 3 networking begins.
+
+### LED effects playground
+
+Rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves cycle every
+20 seconds. Short-press the GPIO14 button to advance; hold for 5 seconds and
+release to sleep, then press again to wake. Brightness limits and the validated
+sleep data-pin hold remain unchanged. See [controls and testing](README_STAGE1.md).
 
 ## Hardware overview
 
@@ -546,7 +555,7 @@ Current software responsibilities:
 - enforce a safe software brightness ceiling to protect the 5 V supply
 - prepare the platform for later Wi‑Fi and browser control features
 
-The firmware currently performs a validation routine that checks:
+The completed Stage 1 firmware validated:
 1. single LED RGB output
 2. full matrix sweep
 3. coordinate mapping verification
@@ -554,7 +563,10 @@ The firmware currently performs a validation routine that checks:
 
 ## Current implementation status
 
-This repository is currently focused on Stage 1 of the development plan: Basic LED control and hardware validation.
+Stages 1 and 2 are complete based on hardware-owner acceptance on 2026-11-17:
+LED operation and sleep/wake work, the fuse and 5 V supply are connected, and
+the current brightness limit is correct. The firmware now plays LED effects;
+Stage 3 networking has not started. No new electrical measurements are claimed.
 
 The design principle is to avoid adding Wi‑Fi, browser features, or storage functionality until the display hardware is proven stable. Only after the matrix is electrically sound and correctly mapped should software complexity increase.
 
@@ -570,7 +582,7 @@ The firmware and hardware are considered valid for Stage 1 when all of the follo
 
 ## Stage-based roadmap
 
-### Stage 1: Basic LED control
+### Stage 1: Basic LED control - COMPLETED
 - test a single RGB LED
 - verify the selected data GPIO
 - verify the logic-level shifter
@@ -578,7 +590,10 @@ The firmware and hardware are considered valid for Stage 1 when all of the follo
 - connect and validate the full 16x16 matrix
 - verify coordinate mapping across all pixels
 
-### Stage 2: Power system validation
+### Stage 2: Power system validation - COMPLETED
+Accepted hardware scope: working 5 V supply, connected fuse, and existing
+brightness cap. Original checklist retained for reference:
+
 - regulated 5 V power supply
 - common ground integrity
 - fuse and protection layout
@@ -637,8 +652,8 @@ Key project files:
 - `include/PinConfig.h` — GPIO assignments
 - `include/MatrixConfig.h` — wiring and rotation settings
 - `include/secrets.example.h` — example secrets template
-- `src/main.cpp` — main firmware and validation logic
-- `README_STAGE1.md` — stage-specific validation documentation
+- `src/main.cpp` — LED effects, button controls, and sleep/wake logic
+- `README_STAGE1.md` — effects controls and hardware validation documentation
 - `README.md` — project overview and hardware/software context
 
 ## Development environment
@@ -657,7 +672,8 @@ This project is built with:
 4. Confirm the matrix is powered from a regulated 5 V source with a common ground.
 5. Build and upload the firmware.
 6. Verify the serial monitor shows the safe brightness cap and the project remains under the 12 A supply limit.
-7. Watch the serial monitor for the Stage 1 validation sequence.
+7. Watch the effects playlist and effect names in the serial monitor; short-press
+   to skip, or hold for 5 seconds and release to sleep.
 
 ## Technical summary
 

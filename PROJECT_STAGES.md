@@ -6,7 +6,16 @@ This project is a 16x16 RGB LED matrix controlled by an ESP32-S3. The long-term 
 This repository is now intentionally following a phased implementation plan. The first milestone is not the full app; it is a hardware validation stage that proves the LED driver, GPIO wiring, level-shifting path, power distribution, and matrix mapping before any later network features are added.
 
 ## Current implementation status
-The repository is currently focused on Stage 1: Basic LED Control.
+**Stage 1: Basic LED Control - COMPLETED.**
+**Stage 2: Power System - COMPLETED.**
+
+Completion confirmed by the hardware owner on 2026-11-17: the LED panel and
+sleep/wake work, the fuse and 5 V supply are connected and working, and the
+existing brightness limit is accepted. This records the owner's acceptance,
+not new current or voltage-drop measurements by the firmware.
+
+The current firmware is an offline LED effects playground. Stage 3 networking
+has not started.
 
 The design is intentionally tight and test-driven:
 - verify one RGB LED works on the selected data line
@@ -17,7 +26,7 @@ The design is intentionally tight and test-driven:
 - add a wake/sleep button and idle timeout for the board to enter deep sleep without damaging the panel
 - prevent adding Wi‑Fi or browser work until the hardware is proven stable
 
-## Stage 1 goals
+## Stage 1 goals (completed)
 - Test a single RGB LED with red, green, blue, and white output
 - Verify the chosen ESP32-S3 GPIO is valid for the LED data line
 - Confirm the 3.3 V to 5 V logic conversion path is working
@@ -28,21 +37,31 @@ The design is intentionally tight and test-driven:
 - Provide a reliable hardware sleep path using a momentary button and a 60-minute idle timer
 
 ## Wake and sleep behavior
-This Stage 1 build now includes the power-saving behavior defined in the open issues for the sleep button and idle shutdown:
+The effects build retains the validated power-saving behavior:
 
 - A momentary button on GPIO 14 is used as a wake/sleep input.
 - Hold the button for 5 seconds, then release it to clear the display and enter ESP32 deep sleep. Waiting for release prevents immediate wake-up from the still-active LOW signal.
 - GPIO14 uses the internal input pull-up while awake and the RTC pull-up during deep sleep. Button polling continues during LED pattern display times.
-- Press again to wake. The board restores the last saved LED frame from RTC memory, returns GPIO14 to digital input mode, and restarts the validation cycle. Release the wake press before beginning another sleep gesture.
+- Press again to wake. The board restores the saved LED frame and selected effect from RTC memory, returns GPIO14 to digital input mode, and resumes animation. Release the wake press before beginning another sleep gesture; this release does not skip effects.
 - If the display remains unchanged for more than 60 minutes, the device also enters deep sleep using the same wake routine.
 
-This is intentionally kept simple at Stage 1: the firmware stores only the current LED frame in RTC memory so a wake can restore the last visible pattern without introducing a full persistence layer.
+The firmware stores the current frame, effect selection, and animation elapsed
+time in RTC memory. This survives deep sleep, not power removal.
 
-The single-LED RGB test, full-panel gradient, and full-panel checkerboard repeat
-intentionally with blank gaps. The two full-panel patterns followed by the first
-LED blinking are normal validation behavior, not a fault. These repeated changes
-also prevent the idle timeout from expiring. See [Stage 1 testing](README_STAGE1.md)
-for expected timings, button diagnostics, and wiring checks.
+## LED effects playground (before Stage 3)
+
+The old repeating hardware test is replaced by six animated effects:
+rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves.
+
+- Effects change automatically every 20 seconds.
+- A short GPIO14 button press advances on release and restarts the 20-second timer.
+- A 5-second hold requests sleep instead of skipping an effect.
+- Rendering is scheduled every 20 ms without blocking animation delays.
+- Startup brightness remains 32/255; the existing 198/255 ceiling is unchanged.
+- Animations count as LED activity, so the unchanged 60-minute idle timeout
+  does not expire while effects are playing.
+
+See [effects and button testing](README_STAGE1.md) for controls and checks.
 
 ## Power-limit note
 The project uses a Mean Well LPV-100-5 5 V power supply with a 12 A maximum output. A full-white 16x16 WS2812B matrix can theoretically require:
@@ -67,7 +86,10 @@ The design intent is:
 - src/main.cpp
 - README_STAGE1.md
 
-## Stage 1 validation sequence
+## Completed Stage 1 validation sequence (historical)
+These are the accepted hardware checks; the current firmware plays effects
+instead of repeating these diagnostic patterns.
+
 1. Power the board and LED matrix from a regulated 5 V source with a common ground.
 2. Run the single-LED RGB test to confirm the line is driving proper colors.
 3. Run the full-matrix sweep to check that every LED can be addressed correctly.
@@ -86,7 +108,7 @@ The design intent is:
 - Install a fuse on the 5 V rail feeding the matrix and logic circuitry.
 
 ## Full roadmap
-### Stage 1: Basic LED control
+### Stage 1: Basic LED control - COMPLETED
 - one LED smoke test
 - GPIO validation
 - level shifter verification
@@ -95,7 +117,10 @@ The design intent is:
 - safe brightness limit enforcement
 - wake/sleep button and idle shutdown testing
 
-### Stage 2: Power system
+### Stage 2: Power system - COMPLETED
+Accepted by the hardware owner: connected fuse, working 5 V supply, and correct
+configured maximum brightness. Original power-system checklist for reference:
+
 - 5 V supply and fusing
 - bulk capacitor and injection points
 - measurement of current and voltage drop
@@ -141,7 +166,7 @@ This Stage 1 implementation is designed for PlatformIO with the Arduino framewor
 3. Confirm the data pin in `include/PinConfig.h` matches your board and wiring.
 4. Build and upload the firmware.
 5. Confirm the serial monitor reports the safe brightness ceiling for the LPV-100-5 5 V / 12 A supply.
-6. Watch the serial monitor for the Stage 1 validation sequence.
+6. Watch the effects playlist; the serial monitor prints each selected effect.
 7. Hold the wake button for 5 seconds, release to sleep, then press again to test wake recovery.
 
 ## Important design principle

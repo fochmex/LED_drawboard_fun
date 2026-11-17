@@ -9,6 +9,7 @@
 // GPIO 4 sends the one-wire data signal to the WS2812B LED matrix.
 // Recommended signal path:
 // ESP32 GPIO 4 -> level shifter -> 300-500 ohm resistor -> matrix DIN.
+// Deep sleep holds this RTC-capable pin LOW to prevent spurious LED data.
 #define LED_DATA_PIN 4
 
 // GPIO 33 controls the separate status LED/output used by the application.
@@ -37,5 +38,6 @@
 // This suppresses false transitions caused by mechanical contact bounce.
 #define WAKE_BUTTON_DEBOUNCE_MS 25
 
-// Hold for 5000 ms to request sleep, then release. Press again to wake.
+// Short press: next effect. Hold for 5000 ms, then release to sleep.
+// Press again to wake; the wake press does not skip an effect.
 #define WAKE_BUTTON_LONG_PRESS_MS 5000

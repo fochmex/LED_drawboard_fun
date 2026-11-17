@@ -61,11 +61,12 @@
 #define MAX_TEST_BRIGHTNESS 64
 
 // -----------------------------------------------------------------------------
-// Test and power-management timing
+// Effects and power-management timing
 // -----------------------------------------------------------------------------
 
-// Delay between individual colors or states in the Stage 1 hardware tests.
-#define STAGE1_TEST_DELAY_MS 500
+// Render at up to 50 frames per second; change effects every 20 seconds.
+#define EFFECT_FRAME_INTERVAL_MS 20UL
+#define EFFECT_DURATION_MS 20000UL
 
 // Enter deep sleep after one hour without registered LED activity.
 // UL forces unsigned long arithmetic, which prevents 16-bit integer overflow

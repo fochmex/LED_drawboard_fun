@@ -14,31 +14,37 @@ namespace
     // FastLED.show() is called.
     CRGB leds[PIXEL_COUNT];
 
-    // Index of the next hardware validation test: RGB, sweep, or mapping.
-    uint8_t currentTest = 0;
-    uint32_t lastTransitionMs = 0;
+    enum class Effect : uint8_t
+    {
+        kRainbow,
+        kConfetti,
+        kComet,
+        kPlasma,
+        kScanner,
+        kColorWaves,
+        kCount
+    };
+
+    const char* const effectNames[] = {
+        "Rainbow", "Confetti", "Comet", "Plasma", "Bouncing scanner", "Ocean waves"};
+    static_assert(sizeof(effectNames) / sizeof(effectNames[0]) ==
+                  static_cast<uint8_t>(Effect::kCount), "Every effect needs a name");
+    Effect currentEffect = Effect::kRainbow;
+    uint32_t effectStartMs = 0;
+    uint32_t lastEffectChangeMs = 0;
+    uint32_t lastFrameMs = 0;
 
     // Updated whenever the LED content changes. Used for the automatic
     // idle-to-deep-sleep timeout.
     uint32_t lastActivityMs = 0;
     bool waitForWakeButtonRelease = false;
 
-    void handleWakeButtonSleepInput();
-
-    void waitWithButtonPolling(uint32_t durationMs)
-    {
-        const uint32_t startMs = millis();
-        while ((millis() - startMs) < durationMs)
-        {
-            handleWakeButtonSleepInput();
-            delay(1);
-        }
-    }
-
     // RTC memory survives ESP32 deep sleep. This allows the last displayed
     // LED frame to be restored after waking with the button.
     static RTC_DATA_ATTR CRGB rtcLastFrame[PIXEL_COUNT];
     static RTC_DATA_ATTR bool rtcFrameValid = false;
+    static RTC_DATA_ATTR uint8_t rtcEffect = 0;
+    static RTC_DATA_ATTR uint32_t rtcEffectElapsedMs = 0;
 
     void markLedActivity()
     {
@@ -55,13 +61,15 @@ namespace
     void saveCurrentFrameToRtc()
     {
         std::memcpy(rtcLastFrame, leds, sizeof(leds));
+        rtcEffect = static_cast<uint8_t>(currentEffect);
+        rtcEffectElapsedMs = millis() - effectStartMs;
         rtcFrameValid = true;
     }
 
     void restoreLastFrameFromRtc()
     {
         // A normal power cycle does not guarantee valid RTC frame data.
-        if (!rtcFrameValid)
+        if (!rtcFrameValid || rtcEffect >= static_cast<uint8_t>(Effect::kCount))
         {
             clearMatrix();
             FastLED.show();
@@ -69,6 +77,8 @@ namespace
         }
 
         std::memcpy(leds, rtcLastFrame, sizeof(leds));
+        currentEffect = static_cast<Effect>(rtcEffect);
+        effectStartMs = millis() - rtcEffectElapsedMs;
         FastLED.show();
         markLedActivity();
     }
@@ -120,82 +130,91 @@ namespace
         markLedActivity();
     }
 
-    void printStageHeader(const char* label)
+    void nextEffect()
     {
-        Serial.println();
-        Serial.println(label);
-        Serial.printf("Matrix: %ux%u | Pixels: %u | Data pin: %d\n",
-                      MATRIX_WIDTH,
-                      MATRIX_HEIGHT,
-                      PIXEL_COUNT,
-                      LED_DATA_PIN);
+        currentEffect = static_cast<Effect>(
+            (static_cast<uint8_t>(currentEffect) + 1U) % static_cast<uint8_t>(Effect::kCount));
+        effectStartMs = millis();
+        lastEffectChangeMs = effectStartMs;
+        FastLED.clear(false);
+        Serial.printf("Effect: %s\n", effectNames[static_cast<uint8_t>(currentEffect)]);
     }
 
-    void runSingleLedColorTest()
+    void renderEffect(uint32_t nowMs)
     {
-        // Verify data communication and RGB/GRB color order using LED (0,0).
-        printStageHeader("[Stage 1A] Single LED RGB test");
-        const CRGB colors[] = {CRGB::Red, CRGB::Green, CRGB::Blue, CRGB::White};
-
-        for (const auto& color : colors)
+        const uint32_t elapsedMs = nowMs - effectStartMs;
+        const uint8_t phase = static_cast<uint8_t>(elapsedMs / 20U);
+        switch (currentEffect)
         {
-            clearMatrix();
-            setPixel(0, 0, color);
-            FastLED.show();
-            Serial.printf("Color: R=%u G=%u B=%u\n", color.r, color.g, color.b);
-            waitWithButtonPolling(STAGE1_TEST_DELAY_MS);
-        }
-
-        clearMatrix();
-        FastLED.show();
-    }
-
-    void runMatrixSweepTest()
-    {
-        // Fill the complete matrix with a position-dependent color gradient.
-        // This helps identify dead pixels, interrupted data paths, and wiring issues.
-        printStageHeader("[Stage 1B] Full matrix sweep");
-        for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
-        {
-            for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+            case Effect::kRainbow:
             {
-                const uint8_t r = (x * 255U) / (MATRIX_WIDTH - 1U);
-                const uint8_t g = (y * 255U) / (MATRIX_HEIGHT - 1U);
-                const uint8_t b = 255U - ((x + y) * 4U);
-                setPixel(x, y, CRGB(r, g, b));
+                for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+                {
+                    for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+                    {
+                        setPixel(x, y, CHSV(phase + x * 8U + y * 8U, 255, 255));
+                    }
+                }
+                break;
             }
-        }
-
-        FastLED.show();
-        waitWithButtonPolling(STAGE1_TEST_DELAY_MS * 2U);
-        clearMatrix();
-        FastLED.show();
-    }
-
-    void runCoordinateMappingTest()
-    {
-        // A checkerboard pattern makes swapped rows, reversed rows, or an
-        // incorrect serpentine configuration easy to recognize visually.
-        printStageHeader("[Stage 1C] Coordinate mapping verification");
-        for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
-        {
-            for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+            case Effect::kConfetti:
+                fadeToBlackBy(leds, PIXEL_COUNT, 18);
+                leds[random16(PIXEL_COUNT)] += CHSV(phase + random8(64), 200, 255);
+                break;
+            case Effect::kComet:
             {
-                const bool oddCell = ((x + y) % 2U) == 1U;
-                setPixel(x, y, oddCell ? CRGB::Cyan : CRGB::Magenta);
+                fadeToBlackBy(leds, PIXEL_COUNT, 35);
+                const uint16_t position = (elapsedMs / EFFECT_FRAME_INTERVAL_MS) % PIXEL_COUNT;
+                const uint8_t y = position / MATRIX_WIDTH;
+                const uint8_t x = (y % 2U == 0U)
+                    ? position % MATRIX_WIDTH
+                    : MATRIX_WIDTH - 1U - position % MATRIX_WIDTH;
+                setPixel(x, y, CHSV(phase, 230, 255));
+                break;
             }
+            case Effect::kPlasma:
+            case Effect::kColorWaves:
+                for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+                {
+                    for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+                    {
+                        const uint8_t wave = (static_cast<uint16_t>(sin8(x * 16U + phase)) +
+                                              sin8(y * 16U - phase)) / 2U;
+                        if (currentEffect == Effect::kPlasma)
+                        {
+                            setPixel(x, y, CHSV(wave + phase, 255, 255));
+                        }
+                        else
+                        {
+                            setPixel(x, y, CHSV(130U + scale8(wave, 40), 240, wave));
+                        }
+                    }
+                }
+                break;
+            case Effect::kScanner:
+            {
+                fadeToBlackBy(leds, PIXEL_COUNT, 60);
+                const uint32_t travel = (elapsedMs / 90U) % (2U * (MATRIX_WIDTH - 1U));
+                const uint8_t x = travel < MATRIX_WIDTH ? travel : 2U * (MATRIX_WIDTH - 1U) - travel;
+                for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+                {
+                    setPixel(x, y, CHSV(phase + y * 6U, 255, 255));
+                }
+                break;
+            }
+            case Effect::kCount:
+                Serial.println("Invalid effect index.");
+                ESP_ERROR_CHECK(ESP_ERR_INVALID_STATE);
+                return;
         }
-
         FastLED.show();
-        waitWithButtonPolling(STAGE1_TEST_DELAY_MS * 2U);
-        clearMatrix();
-        FastLED.show();
+        markLedActivity();
     }
 
     void printStartupSummary()
     {
         Serial.println("========================================");
-        Serial.println("Stage 1: LED matrix hardware validation");
+        Serial.println("Stages 1 and 2 complete: LED effects playground");
         Serial.println("========================================");
         Serial.printf("Board: ESP32-S3\n");
         Serial.printf("Matrix size: %ux%u\n", MATRIX_WIDTH, MATRIX_HEIGHT);
@@ -214,31 +233,14 @@ namespace
         Serial.printf("Idle shutdown timeout: %lu ms\n", IDLE_SLEEP_TIMEOUT_MS);
         Serial.printf("Wiring mode: %s\n",
                       MATRIX_WIRING_MODE == MatrixWiringMode::kSerpentine ? "serpentine" : "straight");
-        Serial.println("Validation sequence: single LED -> matrix sweep -> coordinate check");
+        Serial.printf("Effects: %u | Frame interval: %lu ms | Auto cycle: %lu ms\n",
+                      static_cast<unsigned>(Effect::kCount), EFFECT_FRAME_INTERVAL_MS, EFFECT_DURATION_MS);
+        Serial.printf("Effect: %s\n", effectNames[static_cast<uint8_t>(currentEffect)]);
+        Serial.println("Short button press: next effect");
         Serial.println("Wake/sleep: hold for 5 seconds, then release to sleep; press again to wake");
         Serial.printf("Button raw level: %s (released=HIGH, pressed=LOW)\n",
                       digitalRead(WAKE_BUTTON_PIN) == LOW ? "LOW" : "HIGH");
         Serial.println("========================================");
-    }
-
-    void runCurrentTest()
-    {
-        switch (currentTest)
-        {
-            case 0:
-                runSingleLedColorTest();
-                break;
-            case 1:
-                runMatrixSweepTest();
-                break;
-            case 2:
-                runCoordinateMappingTest();
-                break;
-            default:
-                clearMatrix();
-                FastLED.show();
-                break;
-        }
     }
 
     bool isWakeButtonPressed()
@@ -301,6 +303,15 @@ namespace
         saveCurrentFrameToRtc();
         clearMatrix();
         FastLED.show();
+
+        // Let the black frame latch before taking the data pin away from FastLED.
+        delay(1);
+        const gpio_num_t dataPin = static_cast<gpio_num_t>(LED_DATA_PIN);
+        ESP_ERROR_CHECK(rtc_gpio_init(dataPin));
+        ESP_ERROR_CHECK(rtc_gpio_set_level(dataPin, 0));
+        ESP_ERROR_CHECK(rtc_gpio_set_direction(dataPin, RTC_GPIO_MODE_OUTPUT_ONLY));
+        // The powered level shifter must see LOW, not a floating input in sleep.
+        ESP_ERROR_CHECK(rtc_gpio_hold_en(dataPin));
         digitalWrite(LED_STATUS_PIN, LOW);
 
         Serial.println("Entering deep sleep. Press GPIO14 button to wake.");
@@ -334,6 +345,10 @@ namespace
 
         if (!buttonPressed && buttonWasPressed)
         {
+            if ((millis() - buttonPressStartMs) < WAKE_BUTTON_LONG_PRESS_MS)
+            {
+                nextEffect();
+            }
             buttonPressStartMs = 0;
             Serial.println("Button released.");
         }
@@ -394,9 +409,15 @@ void setup()
 
     // GPIO 4 carries the one-wire data signal to the LED matrix.
     // GRB defines the byte order expected by WS2812B LEDs.
+    const gpio_num_t dataPin = static_cast<gpio_num_t>(LED_DATA_PIN);
+    ESP_ERROR_CHECK(rtc_gpio_hold_dis(dataPin));
+    ESP_ERROR_CHECK(rtc_gpio_deinit(dataPin));
+    pinMode(LED_DATA_PIN, OUTPUT);
+    digitalWrite(LED_DATA_PIN, LOW);
     FastLED.addLeds<WS2812B, LED_DATA_PIN, GRB>(leds, PIXEL_COUNT);
     FastLED.setBrightness(clampBrightness(STARTUP_BRIGHTNESS));
     FastLED.setCorrection(TypicalLEDStrip);
+    effectStartMs = millis();
 
     // Restore the previous image only after a button wake. Start with a blank
     // matrix after a normal boot or power cycle.
@@ -411,23 +432,28 @@ void setup()
     }
 
     printStartupSummary();
-    lastTransitionMs = millis();
+    lastEffectChangeMs = millis();
+    lastFrameMs = millis();
     lastActivityMs = millis();
 }
 
 void loop()
 {
-    // Run the three hardware tests cyclically every 2.5 seconds.
-    static const uint32_t kStepDelayMs = 2500UL;
-
     handleWakeButtonSleepInput();
 
-    if ((millis() - lastTransitionMs) > kStepDelayMs)
+    uint32_t nowMs = millis();
+    if ((nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
     {
-        runCurrentTest();
-        currentTest = (currentTest + 1U) % 3U;
-        lastTransitionMs = millis();
+        nextEffect();
+        nowMs = millis();
+    }
+
+    if ((nowMs - lastFrameMs) >= EFFECT_FRAME_INTERVAL_MS)
+    {
+        lastFrameMs = nowMs;
+        renderEffect(nowMs);
     }
 
     handleIdleSleepTimeout();
+    delay(1);
 }
