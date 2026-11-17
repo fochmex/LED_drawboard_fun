@@ -201,25 +201,28 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 9. Keep the page open while effects run; check button response and reset-free
    operation over several cycles. Brightness remains 32 with ceiling 198.
 
-### Hardware feedback and next-stage UI follow-up (2026-11-17)
+### Hardware feedback and Stage 4 UI fix (2026-11-17)
 
 - The owner confirmed the dashboard is reachable on the main LAN at
   `http://192.168.178.152/` and that this address is now reserved in the router.
   The earlier guest-network address was inaccessible from the main LAN.
 - Reported UI issue: the effect dropdown sometimes closes while open, making
-  selection difficult. Record this for the next stage; no UI behavior change
-  is included in this documentation update.
-- Code inspection identifies a likely cause: each 2-second status poll sets
-  the shared `busy` flag and calls `enableControls()`, temporarily disabling
-  the effect selector and other controls even for a routine background read.
-  Disabling an open native select can dismiss its menu.
-- Next-stage fix: separate background polling from control-command state.
-  Healthy status refreshes must not disable focused/open controls, reset
-  pending selections, or overwrite in-progress edits. Retain appropriate
-  command-in-flight protection and explicit offline/error feedback.
+  selection difficult. Routine 2-second polls were temporarily disabling all
+  controls via the same busy flag used for commands.
+- Stage 4 fix: background polling no longer disables controls. Only pending
+  commands or an unavailable board disable them. Polls do not replace dropdown
+  options or pending effect selections, and do not overwrite a focused playlist
+  checkbox. Reads started before a command are discarded, including late errors,
+  so stale status cannot overwrite a command result.
 - Acceptance: keep the dropdown open across several polling intervals, then
   select and apply an effect on desktop and mobile. Verify status continues
   updating, commands are not duplicated, and outage/recovery still works.
+- Validation: firmware build passed. An isolated JavaScript test of the embedded
+  script passed passive polling without disabled-state writes, pending selection
+  retention, all six effect commands, command locking, stale success/error
+  rejection, focused checkbox preservation, and offline/recovery handling.
+  Native browser click automation timed out; desktop/phone menu interaction and
+  physical panel acceptance still require the owner's hardware test.
 
 ## Power-limit note
 The project uses a Mean Well LPV-100-5 5 V power supply with a 12 A maximum output. A full-white 16x16 WS2812B matrix can theoretically require:

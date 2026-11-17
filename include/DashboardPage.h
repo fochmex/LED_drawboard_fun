@@ -47,9 +47,13 @@ small{color:#b5c3d9}a{color:#75e4ca}:focus-visible{outline:3px solid #75e4ca;out
 <script>
 'use strict';
 const byId = id => document.getElementById(id);
-let ready = false, busy = false, initialized = false;
+let ready = false, commandPending = false, initialized = false;
+let commandVersion = 0;
 function enableControls() {
-  for (const id of ['effect', 'apply', 'playlist']) byId(id).disabled = !ready || busy;
+  const disabled = !ready || commandPending;
+  for (const id of ['effect', 'apply', 'playlist']) {
+    if (byId(id).disabled !== disabled) byId(id).disabled = disabled;
+  }
 }
 function message(text, error = false) {
   byId('message').textContent = text;
@@ -85,7 +89,7 @@ function showStatus(data) {
     byId('effect').value = data.effect;
     initialized = true;
   }
-  byId('playlist').checked = data.playlist;
+  if (document.activeElement !== byId('playlist')) byId('playlist').checked = data.playlist;
   for (const id of ['hostname', 'ip', 'mac']) byId(id).textContent = data[id];
   byId('rssi').textContent = `${data.rssi} dBm`;
   byId('matrix').textContent = `${data.width} x ${data.height} / ${data.pixels} pixels`;
@@ -95,7 +99,9 @@ function showStatus(data) {
   enableControls();
 }
 async function control(path, values) {
-  busy = true; enableControls();
+  commandPending = true;
+  ++commandVersion;
+  enableControls();
   try {
     showStatus(await request(path, values));
     message('Playback updated.');
@@ -103,24 +109,31 @@ async function control(path, values) {
     ready = false;
     byId('connection').textContent = 'Unavailable';
     message(`Command not confirmed: ${error.message}. Check board status before retrying.`, true);
-  } finally { busy = false; enableControls(); }
+  } finally { commandPending = false; enableControls(); }
 }
 byId('effect-form').addEventListener('submit', event => {
   event.preventDefault();
-  if (ready && !busy) control('/api/effect', {id: byId('effect').value});
+  if (ready && !commandPending) control('/api/effect', {id: byId('effect').value});
 });
 byId('playlist').addEventListener('change', () => {
-  if (ready && !busy) control('/api/playlist', {enabled: String(byId('playlist').checked)});
+  if (ready && !commandPending) control('/api/playlist', {enabled: String(byId('playlist').checked)});
 });
 async function poll() {
-  if (!busy) {
-    busy = true; enableControls();
-    try { showStatus(await request('/api/status')); }
+  if (!commandPending) {
+    const version = commandVersion;
+    try {
+      const data = await request('/api/status');
+      // A read started before a command must not overwrite its result.
+      if (version === commandVersion) showStatus(data);
+    }
     catch (error) {
-      ready = false;
-      byId('connection').textContent = 'Unavailable';
-      message(`Board unavailable: ${error.message}. Waiting for wake or network recovery...`, true);
-    } finally { busy = false; enableControls(); }
+      if (version === commandVersion) {
+        ready = false;
+        byId('connection').textContent = 'Unavailable';
+        message(`Board unavailable: ${error.message}. Waiting for wake or network recovery...`, true);
+        enableControls();
+      }
+    }
   }
   setTimeout(poll, 2000);
 }
