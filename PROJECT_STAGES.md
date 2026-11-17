@@ -31,11 +31,18 @@ The design is intentionally tight and test-driven:
 This Stage 1 build now includes the power-saving behavior defined in the open issues for the sleep button and idle shutdown:
 
 - A momentary button on GPIO 14 is used as a wake/sleep input.
-- When the button is held for 5 seconds while the matrix is active, the firmware clears the display and enters ESP32 deep sleep.
-- On wake, the board restores the last saved LED frame from RTC memory and continues from the last configuration.
+- Hold the button for 5 seconds, then release it to clear the display and enter ESP32 deep sleep. Waiting for release prevents immediate wake-up from the still-active LOW signal.
+- GPIO14 uses the internal input pull-up while awake and the RTC pull-up during deep sleep. Button polling continues during LED pattern display times.
+- Press again to wake. The board restores the last saved LED frame from RTC memory, returns GPIO14 to digital input mode, and restarts the validation cycle. Release the wake press before beginning another sleep gesture.
 - If the display remains unchanged for more than 60 minutes, the device also enters deep sleep using the same wake routine.
 
 This is intentionally kept simple at Stage 1: the firmware stores only the current LED frame in RTC memory so a wake can restore the last visible pattern without introducing a full persistence layer.
+
+The single-LED RGB test, full-panel gradient, and full-panel checkerboard repeat
+intentionally with blank gaps. The two full-panel patterns followed by the first
+LED blinking are normal validation behavior, not a fault. These repeated changes
+also prevent the idle timeout from expiring. See [Stage 1 testing](README_STAGE1.md)
+for expected timings, button diagnostics, and wiring checks.
 
 ## Power-limit note
 The project uses a Mean Well LPV-100-5 5 V power supply with a 12 A maximum output. A full-white 16x16 WS2812B matrix can theoretically require:
@@ -65,7 +72,7 @@ The design intent is:
 2. Run the single-LED RGB test to confirm the line is driving proper colors.
 3. Run the full-matrix sweep to check that every LED can be addressed correctly.
 4. Run the coordinate verification pattern to confirm row/column mapping is correct.
-5. Test the wake button by holding it for 5 seconds and confirming the matrix clears and sleeps.
+5. Test the wake button by holding it for 5 seconds, then releasing it and confirming the matrix clears and sleeps.
 6. Wake the board again with the same button and confirm the last LED frame is restored.
 7. Keep the matrix brightness at or below the firmware limit during validation and increase only after the wiring is proven stable.
 
@@ -135,7 +142,7 @@ This Stage 1 implementation is designed for PlatformIO with the Arduino framewor
 4. Build and upload the firmware.
 5. Confirm the serial monitor reports the safe brightness ceiling for the LPV-100-5 5 V / 12 A supply.
 6. Watch the serial monitor for the Stage 1 validation sequence.
-7. Hold the wake button for 5 seconds to test deep sleep and wake recovery.
+7. Hold the wake button for 5 seconds, release to sleep, then press again to test wake recovery.
 
 ## Important design principle
 The overall product is ambitious, but the best way to make it reliable is to validate the hardware first. This repository now reflects that principle directly, including a programmable brightness ceiling, proper fusing, and conservative power budgeting for the LPV-100-5 supply.

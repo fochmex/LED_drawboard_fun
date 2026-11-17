@@ -1,6 +1,8 @@
 #include <Arduino.h>
 #include <FastLED.h>
 #include <cstring>
+#include <driver/rtc_io.h>
+#include <esp_sleep.h>
 
 #include "ProjectConfig.h"
 #include "PinConfig.h"
@@ -19,6 +21,19 @@ namespace
     // Updated whenever the LED content changes. Used for the automatic
     // idle-to-deep-sleep timeout.
     uint32_t lastActivityMs = 0;
+    bool waitForWakeButtonRelease = false;
+
+    void handleWakeButtonSleepInput();
+
+    void waitWithButtonPolling(uint32_t durationMs)
+    {
+        const uint32_t startMs = millis();
+        while ((millis() - startMs) < durationMs)
+        {
+            handleWakeButtonSleepInput();
+            delay(1);
+        }
+    }
 
     // RTC memory survives ESP32 deep sleep. This allows the last displayed
     // LED frame to be restored after waking with the button.
@@ -128,7 +143,7 @@ namespace
             setPixel(0, 0, color);
             FastLED.show();
             Serial.printf("Color: R=%u G=%u B=%u\n", color.r, color.g, color.b);
-            delay(STAGE1_TEST_DELAY_MS);
+            waitWithButtonPolling(STAGE1_TEST_DELAY_MS);
         }
 
         clearMatrix();
@@ -152,7 +167,7 @@ namespace
         }
 
         FastLED.show();
-        delay(STAGE1_TEST_DELAY_MS * 2U);
+        waitWithButtonPolling(STAGE1_TEST_DELAY_MS * 2U);
         clearMatrix();
         FastLED.show();
     }
@@ -172,7 +187,7 @@ namespace
         }
 
         FastLED.show();
-        delay(STAGE1_TEST_DELAY_MS * 2U);
+        waitWithButtonPolling(STAGE1_TEST_DELAY_MS * 2U);
         clearMatrix();
         FastLED.show();
     }
@@ -200,7 +215,9 @@ namespace
         Serial.printf("Wiring mode: %s\n",
                       MATRIX_WIRING_MODE == MatrixWiringMode::kSerpentine ? "serpentine" : "straight");
         Serial.println("Validation sequence: single LED -> matrix sweep -> coordinate check");
-        Serial.println("Wake/sleep: long-press button enters deep sleep and restores the last LED frame on wake");
+        Serial.println("Wake/sleep: hold for 5 seconds, then release to sleep; press again to wake");
+        Serial.printf("Button raw level: %s (released=HIGH, pressed=LOW)\n",
+                      digitalRead(WAKE_BUTTON_PIN) == LOW ? "LOW" : "HIGH");
         Serial.println("========================================");
     }
 
@@ -256,7 +273,28 @@ namespace
 
     void enterDeepSleep()
     {
-        Serial.println("Long press detected: entering deep sleep...");
+        const gpio_num_t wakePin = static_cast<gpio_num_t>(WAKE_BUTTON_PIN);
+        esp_err_t error = esp_sleep_enable_ext0_wakeup(wakePin, WAKE_BUTTON_ACTIVE_LEVEL);
+        if (error == ESP_OK)
+        {
+            error = rtc_gpio_pullup_en(wakePin);
+        }
+        if (error == ESP_OK)
+        {
+            error = rtc_gpio_pulldown_dis(wakePin);
+        }
+        if (error != ESP_OK)
+        {
+            Serial.printf("Cannot configure button wake-up: %s. Staying awake.\n", esp_err_to_name(error));
+            return;
+        }
+
+        // EXT0 is level-triggered: sleeping while pressed wakes immediately.
+        Serial.println("Sleep requested. Release the button to enter deep sleep.");
+        while (readDebouncedButtonState() || isWakeButtonPressed())
+        {
+            delay(1);
+        }
 
         // Save the visible frame before clearing the LEDs. The frame can then
         // be restored after the ESP32 wakes from the external button signal.
@@ -265,10 +303,8 @@ namespace
         FastLED.show();
         digitalWrite(LED_STATUS_PIN, LOW);
 
-        // EXT0 wake-up monitors one RTC-capable GPIO for the configured level.
-        esp_sleep_enable_ext0_wakeup(
-            static_cast<gpio_num_t>(WAKE_BUTTON_PIN),
-            WAKE_BUTTON_ACTIVE_LEVEL);
+        Serial.println("Entering deep sleep. Press GPIO14 button to wake.");
+        Serial.flush();
         esp_deep_sleep_start();
     }
 
@@ -280,20 +316,35 @@ namespace
         static uint32_t buttonPressStartMs = 0;
 
         const bool buttonPressed = readDebouncedButtonState();
+        if (waitForWakeButtonRelease)
+        {
+            if (!buttonPressed && !isWakeButtonPressed())
+            {
+                waitForWakeButtonRelease = false;
+                Serial.println("Wake button released; sleep input ready.");
+            }
+            return;
+        }
+
         if (buttonPressed && !buttonWasPressed)
         {
             buttonPressStartMs = millis();
+            Serial.println("Button pressed. Hold for 5 seconds to request sleep.");
         }
 
         if (!buttonPressed && buttonWasPressed)
         {
             buttonPressStartMs = 0;
+            Serial.println("Button released.");
         }
 
         buttonWasPressed = buttonPressed;
 
         if (buttonPressed && ((millis() - buttonPressStartMs) >= WAKE_BUTTON_LONG_PRESS_MS))
         {
+            // Also require a new press if configuring sleep fails.
+            buttonWasPressed = false;
+            waitForWakeButtonRelease = true;
             enterDeepSleep();
         }
     }
@@ -314,13 +365,24 @@ void setup()
     Serial.begin(115200);
     delay(1000);
 
+    const esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
+    if (wakeCause == ESP_SLEEP_WAKEUP_EXT0)
+    {
+        // EXT0 leaves the wake pin in RTC mode until explicitly released.
+        const esp_err_t error = rtc_gpio_deinit(static_cast<gpio_num_t>(WAKE_BUTTON_PIN));
+        if (error != ESP_OK)
+        {
+            Serial.printf("Cannot release wake GPIO from RTC mode: %s\n", esp_err_to_name(error));
+        }
+        waitForWakeButtonRelease = true;
+    }
+
     // GPIO 33: status output. GPIO 14: active-low wake/sleep button.
     pinMode(LED_STATUS_PIN, OUTPUT);
     pinMode(WAKE_BUTTON_PIN, INPUT_PULLUP);
     digitalWrite(LED_STATUS_PIN, HIGH);
 
     // Determine whether this is a normal boot or a wake from deep sleep.
-    const esp_sleep_wakeup_cause_t wakeCause = esp_sleep_get_wakeup_cause();
     if (wakeCause == ESP_SLEEP_WAKEUP_EXT0)
     {
         Serial.println("Wake reason: external wake button");
@@ -369,4 +431,3 @@ void loop()
 
     handleIdleSleepTimeout();
 }
-

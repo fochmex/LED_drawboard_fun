@@ -26,6 +26,7 @@
 //   - Button released: GPIO reads HIGH
 //   - Button pressed:  GPIO reads LOW
 // No external pull-up resistor is required while INPUT_PULLUP is enabled.
+// Deep sleep uses the RTC pull-up on this RTC-capable ESP32-S3 pin.
 // If the internal pull-up is disabled, add an external 10 kohm pull-up to 3.3 V.
 #define WAKE_BUTTON_PIN 14
 
@@ -36,5 +37,5 @@
 // This suppresses false transitions caused by mechanical contact bounce.
 #define WAKE_BUTTON_DEBOUNCE_MS 25
 
-// The button must remain pressed for 5000 ms (5 seconds) to request deep sleep.
+// Hold for 5000 ms to request sleep, then release. Press again to wake.
 #define WAKE_BUTTON_LONG_PRESS_MS 5000
