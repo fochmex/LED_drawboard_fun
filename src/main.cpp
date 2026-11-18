@@ -1,14 +1,17 @@
 #include <Arduino.h>
 #include <FastLED.h>
 #include <cstring>
+#include <math.h>
 #include <driver/rtc_io.h>
 #include <esp_sleep.h>
+#include <time.h>
 
 #include "ProjectConfig.h"
 #include "PinConfig.h"
 #include "MatrixConfig.h"
 #include "NetworkManager.h"
 #include "EffectControl.h"
+#include "ClockControl.h"
 #include "DisplayControl.h"
 #include "WebDashboard.h"
 
@@ -43,6 +46,9 @@ namespace
     uint32_t lastFrameMs = 0;
     bool autoPlaylist = true;
     bool drawingMode = false;
+    bool clockMode = false;
+    ClockControl::Style clockStyle = ClockControl::Style::kAnalog;
+    int lastClockSecond = -1;
 
     // Updated whenever the LED content changes. Used for the automatic
     // idle-to-deep-sleep timeout.
@@ -58,6 +64,8 @@ namespace
     static RTC_DATA_ATTR uint32_t rtcEffectElapsedMs = 0;
     static RTC_DATA_ATTR bool rtcAutoPlaylist = true;
     static RTC_DATA_ATTR bool rtcDrawingMode = false;
+    static RTC_DATA_ATTR bool rtcClockMode = false;
+    static RTC_DATA_ATTR uint8_t rtcClockStyle = 0;
     static RTC_DATA_ATTR uint8_t rtcBrightness = STARTUP_BRIGHTNESS;
 
     void markLedActivity()
@@ -79,6 +87,8 @@ namespace
         rtcEffectElapsedMs = millis() - effectStartMs;
         rtcAutoPlaylist = autoPlaylist;
         rtcDrawingMode = drawingMode;
+        rtcClockMode = clockMode;
+        rtcClockStyle = static_cast<uint8_t>(clockStyle);
         rtcBrightness = FastLED.getBrightness();
         rtcFrameValid = true;
     }
@@ -97,6 +107,11 @@ namespace
         currentEffect = static_cast<Effect>(rtcEffect);
         autoPlaylist = rtcAutoPlaylist;
         drawingMode = rtcDrawingMode;
+        clockMode = rtcClockMode;
+        clockStyle = rtcClockStyle <= static_cast<uint8_t>(ClockControl::Style::kBinary)
+                         ? static_cast<ClockControl::Style>(rtcClockStyle)
+                         : ClockControl::Style::kAnalog;
+        lastClockSecond = -1;
         FastLED.setBrightness(rtcBrightness > MAX_ALLOWED_BRIGHTNESS
                                   ? MAX_ALLOWED_BRIGHTNESS : rtcBrightness);
         effectStartMs = millis() - rtcEffectElapsedMs;
@@ -165,6 +180,7 @@ namespace
     void selectEffect(uint8_t index)
     {
         drawingMode = false;
+        clockMode = false;
         currentEffect = static_cast<Effect>(index);
         effectStartMs = millis();
         lastEffectChangeMs = effectStartMs;
@@ -329,6 +345,99 @@ namespace
                 plotEffectPixel(pixelX, pixelY, color);
             }
         }
+    }
+
+    void drawClockLine(int16_t x0, int16_t y0, int16_t x1, int16_t y1, const CRGB& color)
+    {
+        const int16_t dx = abs(x1 - x0);
+        const int16_t sx = x0 < x1 ? 1 : -1;
+        const int16_t dy = -abs(y1 - y0);
+        const int16_t sy = y0 < y1 ? 1 : -1;
+        int16_t error = dx + dy;
+        while (true)
+        {
+            plotEffectPixel(x0, y0, color);
+            if (x0 == x1 && y0 == y1) break;
+            const int16_t twiceError = 2 * error;
+            if (twiceError >= dy)
+            {
+                error += dy;
+                x0 += sx;
+            }
+            if (twiceError <= dx)
+            {
+                error += dx;
+                y0 += sy;
+            }
+        }
+    }
+
+    void drawClockHand(int16_t centerX, int16_t centerY, float angle,
+                       float length, const CRGB& color)
+    {
+        const int16_t endX = static_cast<int16_t>(lroundf(centerX + sinf(angle) * length));
+        const int16_t endY = static_cast<int16_t>(lroundf(centerY - cosf(angle) * length));
+        drawClockLine(centerX, centerY, endX, endY, color);
+    }
+
+    void renderClock(const struct tm& localTime)
+    {
+        if (clockStyle == ClockControl::Style::kBinary)
+        {
+            FastLED.clear(false);
+            const uint8_t values[] = {
+                static_cast<uint8_t>(localTime.tm_hour),
+                static_cast<uint8_t>(localTime.tm_min),
+                static_cast<uint8_t>(localTime.tm_sec)};
+            const int16_t columnX[] = {1, 7, 13};
+            const CRGB columnColors[] = {
+                CRGB(255, 125, 45), CRGB(40, 190, 255), CRGB(220, 70, 190)};
+
+            for (uint8_t column = 0; column < 3; ++column)
+            {
+                for (uint8_t bit = 0; bit < 6; ++bit)
+                {
+                    const bool isSet = (values[column] & (1U << (5U - bit))) != 0;
+                    CRGB markerColor = columnColors[column];
+                    markerColor.nscale8_video(isSet ? 255 : 24);
+                    const int16_t y = 2 + bit * 2;
+                    plotEffectPixel(columnX[column], y, markerColor);
+                    plotEffectPixel(columnX[column] + 1, y, markerColor);
+                }
+            }
+
+            FastLED.show();
+            markLedActivity();
+            return;
+        }
+
+        FastLED.clear(false);
+        const int16_t centerX = MATRIX_WIDTH / 2 - 1;
+        const int16_t centerY = MATRIX_HEIGHT / 2 - 1;
+        const float pi = 3.14159265F;
+        const float twoPi = 2.0F * pi;
+
+        for (int16_t hour = 0; hour < 12; ++hour)
+        {
+            const float angle = hour * twoPi / 12.0F;
+            const int16_t x = static_cast<int16_t>(lroundf(centerX + sinf(angle) * 6.0F));
+            const int16_t y = static_cast<int16_t>(lroundf(centerY - cosf(angle) * 6.0F));
+            plotEffectPixel(x, y, hour % 3 == 0 ? CRGB(255, 170, 45) : CRGB(70, 95, 120));
+        }
+
+        const float minuteAngle = (localTime.tm_min + localTime.tm_sec / 60.0F) * twoPi / 60.0F;
+        const float hourAngle = ((localTime.tm_hour % 12) + localTime.tm_min / 60.0F) * twoPi / 12.0F;
+        const float secondAngle = localTime.tm_sec * twoPi / 60.0F;
+        drawClockHand(centerX, centerY, minuteAngle, 5.0F, CRGB(210, 230, 255));
+        drawClockHand(centerX, centerY, hourAngle, 3.5F, CRGB(255, 125, 45));
+
+        const int16_t secondX = static_cast<int16_t>(lroundf(centerX + sinf(secondAngle) * 6.0F));
+        const int16_t secondY = static_cast<int16_t>(lroundf(centerY - cosf(secondAngle) * 6.0F));
+        plotEffectPixel(secondX, secondY, CRGB(40, 220, 180));
+        plotEffectPixel(centerX, centerY, CRGB(255, 255, 255));
+
+        FastLED.show();
+        markLedActivity();
     }
 
     void renderEffect(uint32_t nowMs)
@@ -618,7 +727,7 @@ bool EffectControl::select(uint8_t index)
 
 void EffectControl::setPlaylistEnabled(bool enabled)
 {
-    if (enabled && drawingMode)
+    if (enabled && (drawingMode || clockMode))
     {
         selectEffect(static_cast<uint8_t>(currentEffect));
     }
@@ -626,6 +735,73 @@ void EffectControl::setPlaylistEnabled(bool enabled)
     lastEffectChangeMs = millis();
     Serial.printf("Automatic playlist: %s\n", enabled ? "enabled" : "disabled");
     WebDashboard::broadcastStatus();
+}
+
+bool ClockControl::available()
+{
+    return time(nullptr) >= 1700000000;
+}
+
+bool ClockControl::active()
+{
+    return clockMode;
+}
+
+bool ClockControl::setActive(bool enabled)
+{
+    if (enabled)
+    {
+        if (!available()) return false;
+        drawingMode = false;
+        clockMode = true;
+        autoPlaylist = false;
+        lastEffectChangeMs = millis();
+        lastClockSecond = -1;
+        FastLED.clear(false);
+        Serial.println("[Clock] Clock enabled.");
+    }
+    else if (clockMode)
+    {
+        clockMode = false;
+        selectEffect(static_cast<uint8_t>(currentEffect));
+        autoPlaylist = false;
+        Serial.println("[Clock] Returning to selected effect.");
+    }
+    WebDashboard::broadcastStatus();
+    WebDashboard::broadcastFrame();
+    return true;
+}
+
+ClockControl::Style ClockControl::style()
+{
+    return clockStyle;
+}
+
+bool ClockControl::setStyle(ClockControl::Style value)
+{
+    if (value != Style::kAnalog && value != Style::kBinary) return false;
+    if (!available()) return false;
+
+    clockStyle = value;
+    if (clockMode)
+    {
+        struct tm localTime;
+        if (readLocalTime(localTime))
+        {
+            lastClockSecond = localTime.tm_sec;
+            renderClock(localTime);
+            WebDashboard::broadcastFrame();
+        }
+    }
+    WebDashboard::broadcastStatus();
+    return true;
+}
+
+bool ClockControl::readLocalTime(struct tm& value)
+{
+    if (!available()) return false;
+    const time_t now = time(nullptr);
+    return localtime_r(&now, &value) != nullptr;
 }
 
 bool DisplayControl::drawing()
@@ -712,6 +888,7 @@ bool DisplayControl::applyFrame(const char* hex, size_t length)
         }
     }
     drawingMode = true;
+    clockMode = false;
     autoPlaylist = false;
     FastLED.show();
     markLedActivity();
@@ -792,13 +969,23 @@ void loop()
     WebDashboard::update();
 
     uint32_t nowMs = millis();
-    if (autoPlaylist && (nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
+    if (!clockMode && autoPlaylist &&
+        (nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
     {
         nextEffect();
         nowMs = millis();
     }
 
-    if (!drawingMode && (nowMs - lastFrameMs) >= EFFECT_FRAME_INTERVAL_MS)
+    if (clockMode)
+    {
+        struct tm localTime;
+        if (ClockControl::readLocalTime(localTime) && localTime.tm_sec != lastClockSecond)
+        {
+            lastClockSecond = localTime.tm_sec;
+            renderClock(localTime);
+        }
+    }
+    else if (!drawingMode && (nowMs - lastFrameMs) >= EFFECT_FRAME_INTERVAL_MS)
     {
         lastFrameMs = nowMs;
         renderEffect(nowMs);

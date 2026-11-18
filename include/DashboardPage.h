@@ -38,9 +38,15 @@ input[type=number]{font:inherit;width:110px;padding:10px;background:#101522;colo
 <section><h2>Now playing</h2><p id="playing">Waiting for the board...</p>
 <form id="effect-form"><label for="effect">Choose an effect</label><select id="effect" disabled></select>
 <button id="apply" type="submit" disabled>Play selected effect</button></form>
+<div class="tools"><label for="clock-style">Clock style<select id="clock-style" disabled>
+<option value="analog">Analog</option><option value="binary">Binary</option></select></label>
+<button id="clock-toggle" type="button" disabled>Show clock (waiting for time sync)</button></div>
+<small id="clock-style-help">Binary columns read left to right: hours (orange), minutes (cyan), seconds (magenta).
+Each reads top to bottom as 32, 16, 8, 4, 2, 1; bright markers are set bits and dim markers are clear bits.</small>
 <label class="toggle"><input id="playlist" type="checkbox" disabled>Automatic playlist (20 seconds per effect)</label>
 <p id="message" role="status" aria-live="polite"></p>
-<small>Playing a selected effect turns off the playlist. A short physical button press advances one effect without changing the playback mode.</small>
+<small>Playing a selected effect turns off the playlist. Clock styles become available after Wi-Fi time synchronization.
+A short physical button press advances one effect without changing the playback mode.</small>
 </section>
 <section><h2>Drawing studio</h2>
 <p>Draw locally, then press <b>Apply drawing</b> to show it on the LEDs and pause effects.
@@ -56,7 +62,7 @@ Top-left is (0, 0). Browser colors are a preview; LED brightness and color corre
 <p id="draft-status" role="status">Local draft only. Not sent to LEDs.</p>
 <small>Edits are kept only in this open page, not saved on reload or synchronized with other browsers.
 Clear and Fill edit the draft; Apply sends it. Selecting an effect, enabling the playlist,
-or short-pressing the physical button leaves drawing mode.</small>
+showing the clock, or short-pressing the physical button leaves drawing mode.</small>
 <form id="brightness-form"><label for="brightness-value">LED brightness (safe ceiling: <span id="brightness-limit">--</span>/255)</label>
 <div class="tools"><input id="brightness-value" aria-label="LED brightness" type="number" min="0" max="70" step="1" value="15" required disabled>
 <button id="apply-brightness" type="submit" disabled>Set brightness</button></div></form>
@@ -76,6 +82,7 @@ not power removal. A static drawing sleeps after 60 minutes without LED changes.
 'use strict';
 const byId = id => document.getElementById(id);
 let ready = false, commandPending = false, initialized = false;
+let clockAvailable = false, clockMode = false;
 let commandVersion = 0;
 let liveSocket = null, liveHeartbeat = null, liveReconnectTimer = null;
 let liveReconnectDelay = 1000;
@@ -84,6 +91,10 @@ function enableControls() {
   for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness']) {
     if (byId(id).disabled !== disabled) byId(id).disabled = disabled;
   }
+  byId('clock-style').disabled = disabled || !clockAvailable;
+  byId('clock-toggle').disabled = disabled || (!clockAvailable && !clockMode);
+  byId('clock-toggle').textContent = clockMode ? 'Return to effects' :
+    (clockAvailable ? 'Show clock' : 'Show clock (waiting for time sync)');
 }
 function message(text, error = false) {
   byId('message').textContent = text;
@@ -109,8 +120,13 @@ function showStatus(data) {
   if (!ready && initialized) message('Connection restored.');
   ready = true;
   byId('connection').textContent = 'Online';
-  byId('playing').textContent = data.drawing ? 'Drawing / Static image' :
-    `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`;
+  clockAvailable = data.clockAvailable;
+  clockMode = data.clockMode;
+  if (document.activeElement !== byId('clock-style')) byId('clock-style').value = data.clockStyle;
+  byId('playing').textContent = data.clockMode ?
+    `${data.clockStyle === 'binary' ? 'Binary' : 'Analog'} clock / ${data.clockTime || 'syncing'}` :
+    (data.drawing ? 'Drawing / Static image' :
+      `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`);
   if (!initialized) {
     for (const effect of data.effects) {
       const option = document.createElement('option');
@@ -154,6 +170,17 @@ byId('effect-form').addEventListener('submit', event => {
 });
 byId('playlist').addEventListener('change', () => {
   if (ready && !commandPending) control('/api/playlist', {enabled: String(byId('playlist').checked)});
+});
+byId('clock-toggle').addEventListener('click', () => {
+  if (ready && !commandPending && clockAvailable) {
+    control('/api/clock', {enabled: String(!clockMode)},
+      clockMode ? 'Returned to effects.' : 'Clock enabled.');
+  }
+});
+byId('clock-style').addEventListener('change', () => {
+  if (ready && !commandPending && clockAvailable) {
+    control('/api/clock-style', {style: byId('clock-style').value}, 'Clock style updated.');
+  }
 });
 const draft = Array(256).fill('000000');
 const cells = [];

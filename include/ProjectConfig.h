@@ -81,3 +81,6 @@ static_assert(MAX_ALLOWED_BRIGHTNESS <= POWER_BRIGHTNESS_CEILING,
 #define WIFI_CONNECT_TIMEOUT_MS 15000UL
 #define WIFI_RETRY_INITIAL_MS 5000UL
 #define WIFI_RETRY_MAX_MS 60000UL
+
+// POSIX timezone with European daylight-saving transitions.
+#define CLOCK_TIMEZONE "CET-1CEST,M3.5.0,M10.5.0/3"

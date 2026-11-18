@@ -20,6 +20,10 @@ accepted by the owner including the dropdown fix. Stage 5 now adds a drawing
 studio and safe brightness control, accepted by the owner on 2026-11-18.
 Stage 6 live communication / WebSockets was accepted by the owner on 2026-11-18
 after reboot, two-device live status, and sleep/wake reconnect tests.
+Stage 6.5 adds optional NTP-synchronized analog and binary clock styles;
+effects remain the startup display and Clock is enabled from the dashboard
+after time sync. Analog clock behavior is hardware-accepted; binary style
+hardware checking is pending.
 
 ### LED effects playground
 
@@ -82,8 +86,9 @@ reported reserved address this is `http://192.168.178.152/`; check serial for th
 - **Set brightness** applies an integer from 0 to the unchanged safe ceiling
   of 70/255, for both drawings and effects. Startup is 15/255. Zero makes
   the panel dark without clearing its pixels. The board rejects unsafe values.
-- Select an effect or enable the playlist to leave drawing mode. A physical
-  short press goes to the next effect with the playlist still disabled.
+- Select an effect, enable the playlist, or choose the optional Clock mode to
+  leave drawing mode. A physical short press goes to the next effect with the
+  playlist still disabled.
 - The displayed image, drawing/effect mode, and brightness survive deep sleep
   in RTC memory, not power removal. A static drawing sleeps after 60 minutes
   without LED activity; the same GPIO14 long-hold/release and wake gesture works.
@@ -705,6 +710,21 @@ brightness cap. Original checklist retained for reference:
 - Live effect, playlist, drawing, and brightness synchronization
 - Browser heartbeat and exponential reconnect handling
 - HTTP polling remains as a fallback
+
+### Stage 6.5: Optional analog and binary clocks
+- Wi-Fi starts SNTP synchronization without delaying the normal effects startup.
+- Once valid time is available, the dashboard enables clock style selection and
+  **Show clock**.
+- The 16x16 clock uses Europe/Berlin time, including CET/CEST daylight-saving
+  transitions. Analog mode has hour/minute hands and a moving second indicator.
+- Binary mode shows 24-hour hours, minutes, and seconds in three colored columns
+  from left to right: orange, cyan, and magenta. Read each column from top to
+  bottom as 32, 16, 8, 4, 2, 1; bright markers are set bits and dim markers are
+  clear bits.
+- Clock mode is opt-in and does not replace the normal post-boot effects/playlist.
+- Deep sleep/wake retains Clock mode; a power cycle returns to normal effects.
+- Selecting an effect, enabling the playlist, applying a drawing, or short
+  pressing the physical button exits Clock mode.
 
 ### Stage 7: Persistence and configuration
 - save and restore frames

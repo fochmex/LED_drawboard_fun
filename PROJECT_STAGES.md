@@ -3,7 +3,10 @@
 ## Project overview
 This project is a 16x16 RGB LED matrix controlled by an ESP32-S3. The long-term goal is a local, browser-driven display that can draw and animate without any cloud dependency.
 
-This repository is now intentionally following a phased implementation plan. The first milestone is not the full app; it is a hardware validation stage that proves the LED driver, GPIO wiring, level-shifting path, power distribution, and matrix mapping before any later network features are added.
+This project was built in stages, beginning with hardware and power validation
+before adding the current Wi-Fi dashboard, drawing studio, live synchronization,
+and optional clock. The following milestone history and checks document that
+progression.
 
 ## Current implementation status
 **Stage 1: Basic LED Control - COMPLETED.**
@@ -11,7 +14,8 @@ This repository is now intentionally following a phased implementation plan. The
 **Stage 3: Wi-Fi and Networking - IMPLEMENTED AND ACCEPTED.**
 **Stage 4: Basic Web Server - IMPLEMENTED AND ACCEPTED.**
 **Stage 5: Drawing Interface - IMPLEMENTED AND ACCEPTED.**
-**Stage 6: Live Communication - IMPLEMENTED; HARDWARE ACCEPTANCE PENDING.**
+**Stage 6: Live Communication - IMPLEMENTED AND ACCEPTED.**
+**Stage 6.5: Optional Wi-Fi Clock - ANALOG ACCEPTED; BINARY STYLE ADDED, HARDWARE CHECK PENDING.**
 
 Completion confirmed by the hardware owner on 2026-11-17: the LED panel and
 sleep/wake work, the fuse and 5 V supply are connected and working, and the
@@ -29,6 +33,10 @@ This records owner acceptance, not independent execution of every checklist item
 Stage 6 (live communication / WebSockets) was accepted by the hardware owner
 on 2026-11-18 after reboot, multi-device synchronization, and sleep/wake retests.
 HTTP polling remains as a fallback.
+Stage 6.5 adds optional analog and binary clocks. Effects remain the boot
+default; either clock can be selected in the dashboard only after Wi-Fi
+connects and NTP time is valid. Its configured timezone is Europe/Berlin with
+automatic DST rules.
 
 The design is intentionally tight and test-driven:
 - verify one RGB LED works on the selected data line
@@ -490,6 +498,54 @@ Stage 6 acceptance checks:
 - Restarting from deep sleep works, and the browser/network connection recovers.
 - These are owner-reported hardware checks; they do not imply that every
   individual Stage 6 checklist item was separately exercised.
+
+### Stage 6.5: Optional analog and binary clocks
+
+- Start SNTP after Wi-Fi connects, using `pool.ntp.org` and
+  `time.cloudflare.com`; do not delay startup or the effects while waiting.
+- Use the Europe/Berlin timezone with automatic CET/CEST daylight-saving
+  transitions.
+- Keep the existing Rainbow/playlist startup behavior. Do not select Clock
+  automatically at boot or after a power cycle.
+- Enable clock style selection and a **Show clock** dashboard control only after the
+  device has synchronized a valid time. The option is available only through
+  the online dashboard; existing effect and drawing controls remain available.
+- Render a 12-hour analog face on the 16x16 matrix with hour markers, hour and
+  minute hands, and a moving second indicator. Keep the background black.
+- Also offer a binary face with three colored columns for 24-hour hours,
+  minutes, and seconds. Each column reads top-to-bottom as 32, 16, 8, 4, 2, 1;
+  bright markers are set bits and dim markers are clear bits.
+- While Clock is selected, disable automatic-playlist advancement. Selecting
+  an effect, enabling the playlist, applying a drawing, or short-pressing the
+  physical button exits Clock mode.
+- Preserve Clock mode through deep sleep/wake using RTC state. On power-up,
+  resume the normal effects startup instead of restoring Clock automatically.
+- Live status reports clock availability, mode, and local time.
+
+Stage 6.5 validation:
+1. Boot offline and verify effects start as before.
+2. Connect to Wi-Fi and verify effects continue during NTP synchronization;
+   the dashboard clock control stays disabled until valid time is available.
+3. After synchronization, enable Clock from the dashboard and check the time
+   advances, hands move, and the second indicator moves.
+4. Verify local time after an NTP sync and around a CET/CEST DST transition or
+   with an appropriate test clock.
+5. Select an effect, enable the playlist, apply a drawing, and short-press the
+   physical button; each action should exit Clock mode.
+6. Sleep/wake while Clock is active; confirm it resumes with current time.
+7. Power-cycle while Clock is active; confirm the normal effects/playlist
+   startup behavior is unchanged.
+
+### Stage 6.5 analog clock owner acceptance (2026-11-18)
+
+The hardware owner confirmed that all Stage 6.5 validation points work,
+including NTP clock availability and display, clock mode transitions,
+sleep/wake, and unchanged effects startup after a power cycle.
+
+The binary style was added after that acceptance. Verify its displayed time,
+bit order, and style switching on the physical matrix before marking the
+binary style hardware-accepted. As a bit-order check, 12:34:56 should show
+hours `001100`, minutes `100010`, and seconds `111000` from top to bottom.
 
 ### Stage 7: Storage and persistence
 - save/restore image state

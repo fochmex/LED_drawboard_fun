@@ -5,6 +5,7 @@
 
 #include "DashboardPage.h"
 #include "EffectControl.h"
+#include "ClockControl.h"
 #include "DisplayControl.h"
 #include "ProjectConfig.h"
 #include "WebDashboard.h"
@@ -42,6 +43,22 @@ namespace
         body += ",\"brightness\":" + String(DisplayControl::brightness());
         body += ",\"drawing\":";
         body += DisplayControl::drawing() ? "true" : "false";
+        body += ",\"clockAvailable\":";
+        body += ClockControl::available() ? "true" : "false";
+        body += ",\"clockMode\":";
+        body += ClockControl::active() ? "true" : "false";
+        body += ",\"clockStyle\":\"";
+        body += ClockControl::style() == ClockControl::Style::kBinary ? "binary" : "analog";
+        body += '"';
+        body += ",\"clockTime\":\"";
+        struct tm localTime;
+        if (ClockControl::readLocalTime(localTime))
+        {
+            char timeText[9];
+            strftime(timeText, sizeof(timeText), "%H:%M:%S", &localTime);
+            body += timeText;
+        }
+        body += '"';
         body += ",\"maxBrightness\":" + String(MAX_ALLOWED_BRIGHTNESS);
         body += ",\"uptimeMs\":" + String(millis());
         body += ",\"freeHeap\":" + String(ESP.getFreeHeap());
@@ -219,6 +236,50 @@ void WebDashboard::begin()
             return;
         }
         EffectControl::setPlaylistEnabled(enabled == "true");
+        sendStatus();
+    });
+    server.on("/api/clock", HTTP_POST, []()
+    {
+        if (!validateControl("enabled")) return;
+        const String enabled = server.arg("enabled");
+        if (enabled != "true" && enabled != "false")
+        {
+            sendJson(400, "{\"error\":\"enabled must be true or false\"}");
+            return;
+        }
+        if (enabled == "true" && !ClockControl::available())
+        {
+            sendJson(503, "{\"error\":\"Clock time is not synchronized yet\"}");
+            return;
+        }
+        if (!ClockControl::setActive(enabled == "true"))
+        {
+            sendJson(503, "{\"error\":\"Clock mode is unavailable until time synchronization completes\"}");
+            return;
+        }
+        sendStatus();
+    });
+    server.on("/api/clock-style", HTTP_POST, []()
+    {
+        if (!validateControl("style")) return;
+        const String style = server.arg("style");
+        if (style != "analog" && style != "binary")
+        {
+            sendJson(400, "{\"error\":\"style must be analog or binary\"}");
+            return;
+        }
+        if (!ClockControl::available())
+        {
+            sendJson(503, "{\"error\":\"Clock time is not synchronized yet\"}");
+            return;
+        }
+        const ClockControl::Style selectedStyle = style == "binary"
+            ? ClockControl::Style::kBinary : ClockControl::Style::kAnalog;
+        if (!ClockControl::setStyle(selectedStyle))
+        {
+            sendJson(503, "{\"error\":\"Clock style could not be changed\"}");
+            return;
+        }
         sendStatus();
     });
     server.on("/api/frame", HTTP_POST, []()

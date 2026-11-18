@@ -2,6 +2,7 @@
 #include <WiFi.h>
 #include <atomic>
 #include <cstring>
+#include <time.h>
 
 #include "NetworkManager.h"
 #include "ProjectConfig.h"
@@ -142,6 +143,8 @@ void NetworkManager::update()
         {
             state = State::kConnected;
             nextRetryDelayMs = WIFI_RETRY_INITIAL_MS;
+            configTzTime(CLOCK_TIMEZONE, "pool.ntp.org", "time.cloudflare.com");
+            Serial.println("[Time] NTP synchronization started.");
             Serial.printf("[WiFi] Connected | hostname: %s | IP: %s | RSSI: %d dBm | MAC: %s\n",
                           WIFI_HOSTNAME, WiFi.localIP().toString().c_str(),
                           static_cast<int>(WiFi.RSSI()), WiFi.macAddress().c_str());

@@ -18,27 +18,16 @@ This project is a staged embedded electronics and firmware effort to build a bro
 2. Prove the electrical design and matrix mapping are correct.
 3. Only then add networking, UI, persistence, and product features.
 
-The repository has progressed through Stage 6. Stage 6 live WebSocket synchronization is implemented and awaits hardware/browser acceptance.
+The repository has progressed through Stage 6.5. Stage 6 and the analog NTP clock are accepted; the added binary clock style awaits hardware acceptance.
 
 ## Current status
 
-The codebase is intentionally aligned with the early proof-of-concept stage.
-
 Implemented / active:
-- 16x16 matrix configuration
-- ESP32-S3 platform setup
-- FastLED LED control
-- serpentine coordinate mapping
-- basic validation routines for:
-  - single LED color output
-  - full matrix sweep
-  - coordinate mapping verification
-- startup serial diagnostics
-
-Implemented stages:
-- Wi-Fi and local web server
-- browser drawing interface
-- WebSocket synchronization (Stage 6; hardware acceptance pending)
+- 16x16 ESP32-S3 matrix control, effects, and walking cat
+- Wi-Fi, local HTTP dashboard, and live WebSocket status/frame synchronization
+- Browser drawing studio and brightness controls
+- Optional Europe/Berlin NTP analog and binary clock styles (analog accepted; binary hardware check pending)
+- Deep-sleep/wake display restoration
 
 Not yet implemented:
 - frame persistence or configuration storage
@@ -54,10 +43,11 @@ This repository is organized around these stages:
 - Stage 4: Basic web server
 - Stage 5: Drawing interface
 - Stage 6: Live communication
+- Stage 6.5: Optional NTP analog and binary clock
 - Stage 7: Persistence and configuration
 - Stage 8: Enclosure and commissioning
 
-Current repository status: Stage 1 is the active foundation. Do not assume later stages exist in code.
+Current repository status: Stages 1-6 and the Stage 6.5 analog clock are accepted; the Stage 6.5 binary clock style is implemented and awaiting hardware acceptance.
 
 ## Hardware architecture
 
@@ -323,6 +313,7 @@ The next meaningful progression after Stage 1 is:
 - Stage 4: expose a local web status page
 - Stage 5: allow browser-based drawing on a 16x16 grid
 - Stage 6: synchronize updates over WebSockets
+- Stage 6.5: add opt-in NTP-synchronized analog and binary clock styles
 - Stage 7: save and restore board state
 - Stage 8: finalize enclosure and production deployment
 
