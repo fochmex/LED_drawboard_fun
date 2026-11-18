@@ -18,21 +18,24 @@ Stage 3 Wi-Fi networking, accepted after four sleep/wake retests. Stage 4 now
 adds a local web dashboard with status, effect selection, and a playlist toggle,
 accepted by the owner including the dropdown fix. Stage 5 now adds a drawing
 studio and safe brightness control, accepted by the owner on 2026-11-18.
-Stage 6 live communication / WebSockets is next and has not started.
+Stage 6 live communication / WebSockets was accepted by the owner on 2026-11-18
+after reboot, two-device live status, and sleep/wake reconnect tests.
 
 ### LED effects playground
 
 Rainbow, confetti, comet, plasma, bouncing scanner, ocean waves, fireworks,
-and color-changing fish cycle every
+color-changing fish, and a walking cat cycle every
 20 seconds. Short-press the GPIO14 button to advance; hold for 5 seconds and
 release to sleep, then press again to wake. Brightness limits and the validated
 sleep data-pin hold remain unchanged. See [controls and testing](README_STAGE1.md).
 
 **Fireworks** launches colored rockets into expanding, falling sparks.
 **Color-changing fish** swims between pseudo-random positions, wags its tail,
-faces its travel direction, and slowly changes color. Both clear the background
-to black every frame, so only the rocket/sparks or fish are lit, with no trails.
-All eight effects appear automatically in the web selector and playlist.
+faces its travel direction, and slowly changes color. **Walking cat** wanders
+between pseudo-random waypoints, alternates its legs and swishes its tail.
+These effects clear the background to black every frame, so only the current
+animation is lit, with no trails. All nine effects appear in the web selector
+and playlist.
 
 ### Stage 3 Wi-Fi setup
 
@@ -59,10 +62,11 @@ reported reserved address this is `http://192.168.178.152/`; check serial for th
 - Enable **Automatic playlist** to advance every 20 seconds.
 - The physical button still skips effects and handles sleep/wake. Selection
   and playlist mode survive deep sleep, but not a power cycle.
-- Status updates every 2 seconds; the page reports unavailability during sleep
+- WebSockets provide live status/frames; HTTP polling remains a 10-second fallback
+  and reports unavailability during sleep
   or network loss and recovers after reconnection at the same IP.
 - Background polling does not disable healthy controls or replace pending choices.
-- Stage 5 adds drawing and brightness controls below; WebSockets remain Stage 6.
+- Stage 5 adds drawing and brightness controls below; Stage 6 adds live WebSocket synchronization on port 81, accepted on hardware.
 
 ### Stage 5 drawing studio
 
@@ -73,8 +77,8 @@ reported reserved address this is `http://192.168.178.152/`; check serial for th
   **Apply drawing** sends the entire image in one HTTP command and pauses effects.
   Until Apply succeeds, the LEDs keep showing their previous content.
 - Browser drafts remain editable while offline, but sending is disabled.
-  Drafts are not saved on reload or synchronized across pages. This stage does
-  not read the displayed image back into a new browser session.
+  Drafts are not saved on reload; Stage 6 synchronizes the displayed LED frame
+  to clean browser sessions, but unsaved local edits remain local.
 - **Set brightness** applies an integer from 0 to the unchanged safe ceiling
   of 70/255, for both drawings and effects. Startup is 15/255. Zero makes
   the panel dark without clearing its pixels. The board rejects unsafe values.
@@ -84,7 +88,7 @@ reported reserved address this is `http://192.168.178.152/`; check serial for th
   in RTC memory, not power removal. A static drawing sleeps after 60 minutes
   without LED activity; the same GPIO14 long-hold/release and wake gesture works.
   Returning to effects replaces the displayed drawing; retain its browser draft
-  to apply it again. Flash storage and WebSockets are later milestones.
+  to apply it again. Flash storage is a later milestone.
 - The panel's horizontal orientation is corrected in the firmware mapping:
   the browser's top-left pixel should now light the panel's top-left pixel.
   RTC pixels are stored as raw bytes so FastLED's pixel constructors cannot clear
@@ -696,10 +700,11 @@ brightness cap. Original checklist retained for reference:
 - touch and mouse drawing
 - clear, fill, erase, and brightness controls
 
-### Stage 6: Live communication
-- WebSocket updates
-- pixel and full-frame synchronization
-- connection health monitoring
+### Stage 6: Live communication - IMPLEMENTED
+- WebSocket status and full-frame updates on port 81
+- Live effect, playlist, drawing, and brightness synchronization
+- Browser heartbeat and exponential reconnect handling
+- HTTP polling remains as a fallback
 
 ### Stage 7: Persistence and configuration
 - save and restore frames

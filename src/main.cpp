@@ -28,12 +28,13 @@ namespace
         kColorWaves,
         kFireworks,
         kFish,
+        kCat,
         kCount
     };
 
     const char* const effectNames[] = {
         "Rainbow", "Confetti", "Comet", "Plasma", "Bouncing scanner", "Ocean waves",
-        "Fireworks", "Color-changing fish"};
+        "Fireworks", "Color-changing fish", "Walking cat"};
     static_assert(sizeof(effectNames) / sizeof(effectNames[0]) ==
                   static_cast<uint8_t>(Effect::kCount), "Every effect needs a name");
     Effect currentEffect = Effect::kRainbow;
@@ -169,6 +170,8 @@ namespace
         lastEffectChangeMs = effectStartMs;
         FastLED.clear(false);
         Serial.printf("Effect: %s\n", effectNames[static_cast<uint8_t>(currentEffect)]);
+        WebDashboard::broadcastStatus();
+        WebDashboard::broadcastFrame();
     }
 
     void nextEffect()
@@ -260,6 +263,74 @@ namespace
         }
     }
 
+    void renderCat(uint32_t elapsedMs)
+    {
+        FastLED.clear(false);
+        const uint32_t segment = elapsedMs / 2200U;
+        const uint32_t progress = elapsedMs % 2200U;
+        const uint32_t from = effectRandom(segment + 701U);
+        const uint32_t to = effectRandom(segment + 702U);
+        const int16_t fromX = from % (MATRIX_WIDTH - 8U);
+        const int16_t fromY = (from >> 8) % (MATRIX_HEIGHT - 6U);
+        const int16_t toX = to % (MATRIX_WIDTH - 8U);
+        const int16_t toY = (to >> 8) % (MATRIX_HEIGHT - 6U);
+        const int16_t left = fromX + (toX - fromX) * static_cast<int32_t>(progress) / 2200;
+        const int16_t top = fromY + (toY - fromY) * static_cast<int32_t>(progress) / 2200;
+        const bool right = toX >= fromX;
+        const bool walking = progress < 1900U;
+        const bool alternateStep = (elapsedMs / 180U) % 2U != 0U;
+        const CRGB fur = CHSV(static_cast<uint8_t>(24U + (elapsedMs / 160U) % 18U), 210, 230);
+        static const char* const sprite[] = {
+            "......#.#",
+            "......###",
+            ".....####",
+            "..######.",
+            ".########",
+            ".........",
+            "........."};
+
+        for (int16_t y = 0; y < 7; ++y)
+        {
+            for (int16_t x = 0; x < 9; ++x)
+            {
+                bool lit = sprite[y][x] == '#';
+                if (y == 5)
+                {
+                    lit = walking
+                        ? (x == (alternateStep ? 2 : 3) || x == (alternateStep ? 6 : 7))
+                        : (x == 2 || x == 6);
+                }
+                else if (y == 6)
+                {
+                    lit = walking
+                        ? (x == (alternateStep ? 1 : 2) || x == (alternateStep ? 5 : 6))
+                        : (x == 1 || x == 2 || x == 5 || x == 6);
+                }
+                // Keep the tail attached at its base while its tip swishes.
+                if ((x == 1 && y == 3) ||
+                    (walking && ((alternateStep && x == 0 && y == 3) ||
+                                 (!alternateStep && x <= 1 && y == 2))))
+                {
+                    lit = true;
+                }
+                if (!lit) continue;
+
+                int16_t pixelX = right ? left + x : left + 8 - x;
+                int16_t pixelY = top + y;
+                CRGB color = fur;
+                if (y == 0 && (x == 6 || x == 8))
+                {
+                    color = CRGB(255, 190, 210);
+                }
+                else if (x == 8 && y == 2)
+                {
+                    color = CRGB::White;
+                }
+                plotEffectPixel(pixelX, pixelY, color);
+            }
+        }
+    }
+
     void renderEffect(uint32_t nowMs)
     {
         const uint32_t elapsedMs = nowMs - effectStartMs;
@@ -328,6 +399,9 @@ namespace
             case Effect::kFish:
                 renderFish(elapsedMs);
                 break;
+            case Effect::kCat:
+                renderCat(elapsedMs);
+                break;
             case Effect::kCount:
                 Serial.println("Invalid effect index.");
                 ESP_ERROR_CHECK(ESP_ERR_INVALID_STATE);
@@ -340,7 +414,7 @@ namespace
     void printStartupSummary()
     {
         Serial.println("========================================");
-        Serial.println("Stage 5: Drawing studio and LED effects");
+        Serial.println("Stage 6: Live drawing and LED effect synchronization");
         Serial.println("========================================");
         Serial.printf("Board: ESP32-S3\n");
         Serial.printf("Matrix size: %ux%u\n", MATRIX_WIDTH, MATRIX_HEIGHT);
@@ -551,6 +625,7 @@ void EffectControl::setPlaylistEnabled(bool enabled)
     autoPlaylist = enabled;
     lastEffectChangeMs = millis();
     Serial.printf("Automatic playlist: %s\n", enabled ? "enabled" : "disabled");
+    WebDashboard::broadcastStatus();
 }
 
 bool DisplayControl::drawing()
@@ -573,6 +648,32 @@ bool DisplayControl::setBrightness(uint16_t value)
     FastLED.setBrightness(static_cast<uint8_t>(value));
     FastLED.show();
     markLedActivity();
+    WebDashboard::broadcastStatus();
+    return true;
+}
+
+bool DisplayControl::frameHex(char* output, size_t length)
+{
+    if (output == nullptr || length != static_cast<size_t>(PIXEL_COUNT) * 6U + 1U)
+    {
+        return false;
+    }
+    static const char digits[] = "0123456789abcdef";
+    size_t offset = 0;
+    for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+    {
+        for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+        {
+            const CRGB& color = leds[xyToIndex(x, y)];
+            output[offset++] = digits[color.r >> 4];
+            output[offset++] = digits[color.r & 0x0f];
+            output[offset++] = digits[color.g >> 4];
+            output[offset++] = digits[color.g & 0x0f];
+            output[offset++] = digits[color.b >> 4];
+            output[offset++] = digits[color.b & 0x0f];
+        }
+    }
+    output[offset] = '\0';
     return true;
 }
 
@@ -615,6 +716,8 @@ bool DisplayControl::applyFrame(const char* hex, size_t length)
     FastLED.show();
     markLedActivity();
     Serial.println("Drawing applied; effects paused.");
+    WebDashboard::broadcastStatus();
+    WebDashboard::broadcastFrame();
     return true;
 }
 

@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <WebServer.h>
 #include <WiFi.h>
+#include <WebSocketsServer.h>
 
 #include "DashboardPage.h"
 #include "EffectControl.h"
@@ -11,7 +12,12 @@
 namespace
 {
     WebServer server(80);
+    WebSocketsServer webSocket(81);
     bool running = false;
+    bool webSocketRunning = false;
+    String lastStatus;
+    String lastFrame;
+
 
     void sendJson(int code, const String& body)
     {
@@ -20,7 +26,7 @@ namespace
         server.send(code, "application/json", body);
     }
 
-    void sendStatus()
+    String buildStatus()
     {
         String body;
         body.reserve(1000);
@@ -53,7 +59,12 @@ namespace
             body += "\"}";
         }
         body += "]}";
-        sendJson(200, body);
+        return body;
+    }
+
+    void sendStatus()
+    {
+        sendJson(200, buildStatus());
     }
 
     bool validateControl(const char* argument)
@@ -72,6 +83,100 @@ namespace
             return false;
         }
         return true;
+    }
+
+    void broadcastStatusNow()
+    {
+        if (!webSocketRunning || webSocket.connectedClients() == 0) return;
+        String status = "S" + buildStatus();
+        if (status == lastStatus) return;
+        lastStatus = status;
+        webSocket.broadcastTXT(status.c_str(), status.length());
+    }
+
+    void broadcastFrameNow()
+    {
+        if (!webSocketRunning || webSocket.connectedClients() == 0) return;
+        char pixels[static_cast<size_t>(PIXEL_COUNT) * 6U + 1U];
+        if (!DisplayControl::frameHex(pixels, sizeof(pixels))) return;
+        String frame = "F";
+        frame += pixels;
+        if (frame == lastFrame) return;
+        lastFrame = frame;
+        webSocket.broadcastTXT(frame.c_str(), frame.length());
+    }
+
+    void handleWebSocketEvent(uint8_t client, WStype_t type,
+                             uint8_t* payload, size_t length)
+    {
+        if (type == WStype_CONNECTED)
+        {
+            String status = "S" + buildStatus();
+            webSocket.sendTXT(client, status.c_str(), status.length());
+            char pixels[static_cast<size_t>(PIXEL_COUNT) * 6U + 1U];
+            if (DisplayControl::frameHex(pixels, sizeof(pixels)))
+            {
+                String frame = "F";
+                frame += pixels;
+                webSocket.sendTXT(client, frame.c_str(), frame.length());
+            }
+            Serial.printf("[WS] Client %u connected.\n", client);
+        }
+        else if (type == WStype_DISCONNECTED)
+        {
+            Serial.printf("[WS] Client %u disconnected.\n", client);
+        }
+        else if (type == WStype_TEXT && payload != nullptr)
+        {
+            char text[length + 1U];
+            memcpy(text, payload, length);
+            text[length] = '\0';
+            String message(text);
+
+            if (message.startsWith("ping:"))
+            {
+                String pong = "P";
+                pong += message.substring(5);
+                webSocket.sendTXT(client, pong.c_str(), pong.length());
+            }
+            else if (message.startsWith("effect:"))
+            {
+                const String value = message.substring(7);
+                for (uint8_t i = 0; i < EffectControl::count(); ++i)
+                {
+                    if (value == String(i))
+                    {
+                        EffectControl::select(i);
+                        broadcastStatusNow();
+                        broadcastFrameNow();
+                        break;
+                    }
+                }
+            }
+            else if (message == "playlist:true" || message == "playlist:false")
+            {
+                EffectControl::setPlaylistEnabled(message.endsWith("true"));
+            }
+            else if (message.startsWith("brightness:"))
+            {
+                const String value = message.substring(11);
+                char* end = nullptr;
+                const long brightness = strtol(value.c_str(), &end, 10);
+                if (end != value.c_str() && *end == '\0' && brightness >= 0 &&
+                    brightness <= MAX_ALLOWED_BRIGHTNESS)
+                {
+                    DisplayControl::setBrightness(static_cast<uint16_t>(brightness));
+                }
+            }
+            else if (message.startsWith("frame:"))
+            {
+                const String pixels = message.substring(6);
+                if (!DisplayControl::applyFrame(pixels.c_str(), pixels.length()))
+                {
+                    webSocket.sendTXT(client, "EInvalid frame payload", 21);
+                }
+            }
+        }
     }
 }
 
@@ -164,7 +269,24 @@ void WebDashboard::update()
         running = true;
         Serial.printf("[HTTP] Dashboard: http://%s/\n", WiFi.localIP().toString().c_str());
     }
+    if (!webSocketRunning)
+    {
+        webSocket.begin();
+        webSocket.onEvent(handleWebSocketEvent);
+        webSocketRunning = true;
+        Serial.printf("[WS] Live endpoint: ws://%s:81/\n", WiFi.localIP().toString().c_str());
+    }
+    webSocket.loop();
     server.handleClient();
+
+    static uint32_t lastSyncMs = 0;
+    const uint32_t nowMs = millis();
+    if ((nowMs - lastSyncMs) >= 500U)
+    {
+        lastSyncMs = nowMs;
+        broadcastStatusNow();
+        broadcastFrameNow();
+    }
 }
 
 void WebDashboard::stop()
@@ -175,4 +297,20 @@ void WebDashboard::stop()
         running = false;
         Serial.println("[HTTP] Dashboard stopped.");
     }
+    if (webSocketRunning)
+    {
+        webSocket.close();
+        webSocketRunning = false;
+        Serial.println("[WS] Live communication stopped.");
+    }
+}
+
+void WebDashboard::broadcastStatus()
+{
+    broadcastStatusNow();
+}
+
+void WebDashboard::broadcastFrame()
+{
+    broadcastFrameNow();
 }

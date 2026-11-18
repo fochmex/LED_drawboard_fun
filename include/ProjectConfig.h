@@ -53,8 +53,8 @@ static_assert(MAX_ALLOWED_BRIGHTNESS <= POWER_BRIGHTNESS_CEILING,
               "Operating brightness must stay within the electrical ceiling");
 
 // Initial global brightness after startup.
-// 15 of 255 is approximately 5.9%.
-#define STARTUP_BRIGHTNESS 15
+// 10 of 255 is approximately 3.9%.
+#define STARTUP_BRIGHTNESS 10
 
 // Recommended maximum brightness during the Stage 1 hardware tests.
 // 64 of 255 is approximately 25%.

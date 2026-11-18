@@ -9,4 +9,5 @@ namespace DisplayControl
     uint8_t brightness();
     bool setBrightness(uint16_t value);
     bool applyFrame(const char* hex, size_t length);
+    bool frameHex(char* output, size_t length);
 }

@@ -11,6 +11,7 @@ This repository is now intentionally following a phased implementation plan. The
 **Stage 3: Wi-Fi and Networking - IMPLEMENTED AND ACCEPTED.**
 **Stage 4: Basic Web Server - IMPLEMENTED AND ACCEPTED.**
 **Stage 5: Drawing Interface - IMPLEMENTED AND ACCEPTED.**
+**Stage 6: Live Communication - IMPLEMENTED; HARDWARE ACCEPTANCE PENDING.**
 
 Completion confirmed by the hardware owner on 2026-11-17: the LED panel and
 sleep/wake work, the fuse and 5 V supply are connected and working, and the
@@ -25,7 +26,9 @@ owner acceptance, not independent execution of every checklist item.
 Stage 5 (drawing interface) was accepted by the hardware owner on 2026-11-18,
 including the drawing/wake corrections and expanded effects catalogue.
 This records owner acceptance, not independent execution of every checklist item.
-Stage 6 (live communication / WebSockets) is next and has not started.
+Stage 6 (live communication / WebSockets) was accepted by the hardware owner
+on 2026-11-18 after reboot, multi-device synchronization, and sleep/wake retests.
+HTTP polling remains as a fallback.
 
 The design is intentionally tight and test-driven:
 - verify one RGB LED works on the selected data line
@@ -60,9 +63,10 @@ time in RTC memory. This survives deep sleep, not power removal.
 
 ## LED effects playground (before Stage 3)
 
-The old repeating hardware test is replaced by eight animated effects:
+The old repeating hardware test is replaced by nine animated effects:
 rainbow, confetti, comet, plasma, bouncing scanner, ocean waves, fireworks,
-and color-changing fish. The final two were added after Stage 5 owner testing.
+color-changing fish, and a walking cat. Fireworks and fish were added after
+Stage 5 owner testing; the cat was added during Stage 6.
 
 - Effects change automatically every 20 seconds when the playlist is enabled.
 - A short GPIO14 button press advances on release and restarts the 20-second timer.
@@ -78,9 +82,9 @@ All six effects were confirmed working by the hardware owner on 2026-11-17.
 
 ### Recorded requirement: web effect selection
 
-The local web interface now allows selection of all eight existing effects
+The local web interface now allows selection of all nine existing effects
 by name: rainbow, confetti, comet, plasma, bouncing scanner, and ocean waves.
-The catalogue also includes fireworks and color-changing fish. It includes a choice between playing one selected effect and the automatic
+The catalogue also includes fireworks, color-changing fish, and a walking cat. It includes a choice between playing one selected effect and the automatic
 playlist. Physical button controls, brightness ceiling, and sleep/wake are
 retained. Web controls were brought forward from Stage 5 by owner request.
 
@@ -187,7 +191,7 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 
 - `GET /`: dashboard.
 - `GET /api/status`: JSON status plus `{id,name}` effect catalogue.
-- `POST /api/effect`: form field `id`, exactly one canonical integer 0 through 7.
+- `POST /api/effect`: form field `id`, exactly one canonical integer 0 through 8.
   Selects the effect and disables the automatic playlist.
 - `POST /api/playlist`: form field `enabled`, exactly `true` or `false`.
 - POST controls require `X-Drawboard-Control: 1`. Successful commands return
@@ -197,7 +201,7 @@ needed. HTML, CSS, and JavaScript are served from firmware flash.
 ### Stage 4 acceptance checks
 
 1. Open the dashboard using the serial IP from desktop and phone browsers.
-2. Select each of eight effects and check the physical panel matches the name.
+2. Select each of the nine effects and check the physical panel matches the name.
 3. Keep single-effect mode for more than 20 seconds; it must not auto-advance.
 4. Enable the playlist and verify 20-second advances and wraparound.
 5. Short-press the button in both modes; the page must report the new effect.
@@ -454,13 +458,38 @@ configured maximum brightness. Original power-system checklist for reference:
 - 16x16 browser grid
 - color and brush tools
 - clear/fill/erase and brightness control
-- select any of the eight LED effects by name (six original, two added later)
+- select any of the nine LED effects by name
 - select a single effect or automatic playlist playback
 
-### Stage 6: Live communication
-- WebSocket updates
-- frame synchronization
-- connection health handling
+### Stage 6: Live communication - IMPLEMENTED AND ACCEPTED
+- WebSocket status and full-frame updates on port 81
+- Live status/brightness/drawing/playlist/effect synchronization
+- Full 1536-digit RGB frame synchronization for applied drawings and animated frames
+- Added effect ID 8, **Walking cat**: a small side-view cat walks between repeatable pseudo-random waypoints, alternates its legs, and swishes its tail. It fits within the 16x16 matrix and resumes from elapsed animation time after sleep/wake.
+- Browser reconnection with exponential backoff and a 15-second heartbeat
+- Existing HTTP polling remains as a 10-second fallback and recovery path
+- Incoming WebSocket controls validate effect, playlist, brightness, and frame payloads
+- Sleep/Wi-Fi disconnect stops both HTTP and WebSocket listeners and restarts them after reconnect
+
+Stage 6 acceptance checks:
+1. Open the dashboard and confirm status changes appear immediately without waiting for HTTP polling.
+2. Apply a drawing and confirm other open browser sessions receive the full synchronized frame.
+3. Change effect, playlist, or brightness and confirm all live sessions update together.
+4. Disconnect Wi-Fi or put the board to sleep; confirm live status becomes unavailable and then reconnects.
+5. Leave the page open through a wake cycle and verify the board's restored state is reannounced over WebSocket.
+6. Use invalid WebSocket frame/brightness/effect payloads and verify the display is unchanged.
+7. Select Walking cat and confirm it is recognizable, remains fully on the matrix, faces both directions, and animates through the playlist and sleep/wake cycle.
+
+### Stage 6 owner acceptance (2026-11-18)
+
+- After the network startup-order fix, the board no longer enters the repeated
+  reboot/assertion cycle (`tcpip_send_msg_wait_sem: Invalid mbox`).
+- The Walking cat effect works on the physical matrix.
+- The dashboard reports live LED status correctly in browsers on two separate
+  devices at the same time.
+- Restarting from deep sleep works, and the browser/network connection recovers.
+- These are owner-reported hardware checks; they do not imply that every
+  individual Stage 6 checklist item was separately exercised.
 
 ### Stage 7: Storage and persistence
 - save/restore image state

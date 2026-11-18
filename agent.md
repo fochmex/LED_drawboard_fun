@@ -18,7 +18,7 @@ This project is a staged embedded electronics and firmware effort to build a bro
 2. Prove the electrical design and matrix mapping are correct.
 3. Only then add networking, UI, persistence, and product features.
 
-The repository currently focuses on Stage 1: hardware validation and basic LED control.
+The repository has progressed through Stage 6. Stage 6 live WebSocket synchronization is implemented and awaits hardware/browser acceptance.
 
 ## Current status
 
@@ -35,11 +35,12 @@ Implemented / active:
   - coordinate mapping verification
 - startup serial diagnostics
 
-Not yet implemented:
-- Wi-Fi connectivity
-- web server
+Implemented stages:
+- Wi-Fi and local web server
 - browser drawing interface
-- WebSocket synchronization
+- WebSocket synchronization (Stage 6; hardware acceptance pending)
+
+Not yet implemented:
 - frame persistence or configuration storage
 - enclosure / commissioning work
 

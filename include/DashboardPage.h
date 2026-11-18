@@ -77,6 +77,8 @@ not power removal. A static drawing sleeps after 60 minutes without LED changes.
 const byId = id => document.getElementById(id);
 let ready = false, commandPending = false, initialized = false;
 let commandVersion = 0;
+let liveSocket = null, liveHeartbeat = null, liveReconnectTimer = null;
+let liveReconnectDelay = 1000;
 function enableControls() {
   const disabled = !ready || commandPending;
   for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness']) {
@@ -265,6 +267,49 @@ byId('brightness-form').addEventListener('submit', event => {
     control('/api/brightness', {value: String(Number(byId('brightness-value').value))}, 'Brightness updated.');
   }
 });
+function syncFrameHex(hex) {
+  if (!/^([0-9a-fA-F]{6}){256}$/.test(hex) || draftVersion !== 0) return;
+  for (let index = 0; index < 256; ++index) {
+    draft[index] = hex.slice(index * 6, index * 6 + 6).toLowerCase();
+    refreshCell(index);
+  }
+  byId('draft-status').textContent = 'Drawing synchronized from the LEDs.';
+}
+function connectLive() {
+  if (liveSocket && liveSocket.readyState <= 1) return;
+  const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
+  liveSocket = new WebSocket(`${protocol}//${location.hostname}:81/`);
+  liveSocket.addEventListener('open', () => {
+    ready = true;
+    liveReconnectDelay = 1000;
+    byId('connection').textContent = 'Online / Live';
+    enableControls();
+    clearInterval(liveHeartbeat);
+    liveHeartbeat = setInterval(() => {
+      if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+        liveSocket.send(`ping:${Date.now()}`);
+      }
+    }, 15000);
+  });
+  liveSocket.addEventListener('message', event => {
+    if (typeof event.data !== 'string') return;
+    if (event.data.startsWith('S')) {
+      try { showStatus(JSON.parse(event.data.slice(1))); }
+      catch (error) { /* ignore malformed live status */ }
+    } else if (event.data.startsWith('F')) {
+      syncFrameHex(event.data.slice(1));
+    }
+  });
+  liveSocket.addEventListener('close', () => {
+    clearInterval(liveHeartbeat);
+    if (liveReconnectTimer) clearTimeout(liveReconnectTimer);
+    liveReconnectTimer = setTimeout(connectLive, liveReconnectDelay);
+    liveReconnectDelay = Math.min(liveReconnectDelay * 2, 10000);
+  });
+  liveSocket.addEventListener('error', () => {
+    byId('connection').textContent = 'Live unavailable';
+  });
+}
 async function poll() {
   if (!commandPending) {
     const version = commandVersion;
@@ -282,8 +327,9 @@ async function poll() {
       }
     }
   }
-  setTimeout(poll, 2000);
+  setTimeout(poll, 10000);
 }
+connectLive();
 poll();
 </script>
 </body>

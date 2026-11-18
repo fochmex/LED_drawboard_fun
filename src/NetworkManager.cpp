@@ -5,6 +5,7 @@
 
 #include "NetworkManager.h"
 #include "ProjectConfig.h"
+#include "WebDashboard.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -47,6 +48,7 @@ namespace
     void scheduleRetry()
     {
         // Stop an unfinished attempt so it cannot continue through the backoff.
+        WebDashboard::stop();
         if (!WiFi.mode(WIFI_OFF))
         {
             Serial.println("[WiFi] Failed to stop radio before retry.");
