@@ -57,6 +57,17 @@
 
 The LPV-100-5 is rated for 12 A maximum output. A 256-pixel WS2812B matrix is often estimated at up to 60 mA per pixel at full-white, or 15.36 A total, so full-white at maximum output is beyond this supply's rating. Firmware uses a brightness ceiling of 78% (198/255) as a planning safeguard, not a guarantee of current limiting: LED current varies by pixel type, color, supply voltage, and operating conditions. Validate actual current and voltage drop with the assembled matrix, keep the load within the supply and wiring ratings, and provide appropriate fusing and power distribution.
 
+## Measured Power Draw
+
+Power was measured at the AC line.
+
+| Operating state | Brightness | AC power draw |
+|---|---:|---:|
+| All LEDs white | 70/255 | 16 W |
+| Normal effects | 10/255 | 1.6 W |
+
+These measurements may vary with the effects, LED model, mains voltage, and measurement equipment.
+
 ---
 
 ## Level Shifter (SN74AHCT125N)
