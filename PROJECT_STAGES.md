@@ -15,7 +15,9 @@ progression.
 **Stage 4: Basic Web Server - IMPLEMENTED AND ACCEPTED.**
 **Stage 5: Drawing Interface - IMPLEMENTED AND ACCEPTED.**
 **Stage 6: Live Communication - IMPLEMENTED AND ACCEPTED.**
-**Stage 6.5: Optional Wi-Fi Clock - ANALOG ACCEPTED; BINARY STYLE ADDED, HARDWARE CHECK PENDING.**
+**Stage 6.5: Optional Wi-Fi Clock - ANALOG AND BINARY TESTED ON HARDWARE.**
+**Stage 6.6: Dashboard Tetris - IMPLEMENTED.**
+**Stage 6.7: Scrolling Text - IMPLEMENTED.**
 
 Completion confirmed by the hardware owner on 2026-11-17: the LED panel and
 sleep/wake work, the fuse and 5 V supply are connected and working, and the
@@ -542,10 +544,39 @@ The hardware owner confirmed that all Stage 6.5 validation points work,
 including NTP clock availability and display, clock mode transitions,
 sleep/wake, and unchanged effects startup after a power cycle.
 
-The binary style was added after that acceptance. Verify its displayed time,
-bit order, and style switching on the physical matrix before marking the
-binary style hardware-accepted. As a bit-order check, 12:34:56 should show
+The hardware owner reports that the binary clock is functioning and has been
+tested on the physical matrix. As a bit-order reference, 12:34:56 should show
 hours `001100`, minutes `100010`, and seconds `111000` from top to bottom.
+
+### Stage 6.6: Dashboard Tetris - IMPLEMENTED
+
+- Play on a 10-column by 16-row field at the left of the 16x16 matrix.
+- Support all seven tetrominoes, rotation, movement, soft and hard drops,
+  collision and line clearing, score, level progression, pause, restart, and
+  game-over status.
+- Show the next piece and live score, level, and line count in the dashboard.
+- Accept on-screen controls and keyboard input (arrows, Space, P, and R).
+- Starting a game exits the current display mode and disables the automatic
+  effects playlist.
+
+### Stage 6.7: Scrolling Text - IMPLEMENTED
+
+- Enter up to 64 characters and preview the rendered message at matrix
+  resolution in the browser.
+- Configure foreground/background colors, compact/normal/large font,
+  left/right direction, speed from 1 through 10, and before/after pauses up to
+  5000 ms.
+- Support one pass, a fixed repeat count from 1 through 20, or continuous
+  looping, with start, stop, and clear controls.
+- Keep locally edited settings intact during live status updates. Settings,
+  including speed, are sent to the board when **Start scrolling** is pressed.
+- Keep the dashboard preview's glyph sizing and compact-font column mapping
+  aligned with the firmware renderer.
+
+Validation notes: Tetris and scrolling text have been built into the firmware.
+The dashboard and firmware expose the controls described above. Physical
+matrix behavior should still be checked after uploading a new build; no
+additional hardware acceptance is claimed here.
 
 ### Stage 7: Storage and persistence
 - save/restore image state

@@ -10,6 +10,7 @@
 #include "ProjectConfig.h"
 #include "WebDashboard.h"
 #include "TetrisControl.h"
+#include "ScrollingTextControl.h"
 
 namespace
 {
@@ -70,6 +71,33 @@ namespace
         body += ",\"tetrisLines\":" + String(TetrisControl::lines());
         body += ",\"tetrisLevel\":" + String(TetrisControl::level());
         body += ",\"tetrisNext\":" + String(TetrisControl::nextPieceType());
+        body += ",\"textActive\":";
+        body += ScrollingTextControl::active() ? "true" : "false";
+        body += ",\"text\":";
+        body += "\"";
+        for (const char* p = ScrollingTextControl::text(); *p != '\0'; ++p)
+        {
+            if (*p == '"' || *p == '\\') body += '\\';
+            body += *p;
+        }
+        body += '"';
+        body += ",\"textColor\":";
+        char colorHex[7]; snprintf(colorHex, sizeof(colorHex), "%06x", (unsigned)(ScrollingTextControl::textColor() & 0xffffff));
+        body += "\"#" + String(colorHex) + '"';
+        snprintf(colorHex, sizeof(colorHex), "%06x", (unsigned)(ScrollingTextControl::backgroundColor() & 0xffffff));
+        body += ",\"textBackground\":" + String("\"#") + String(colorHex) + '"';
+        body += ",\"textFont\":" + String(ScrollingTextControl::font());
+        body += ",\"textDirection\":";
+        body += ScrollingTextControl::scrollLeft() ? "\"left\"" : "\"right\"";
+        body += ",\"textSpeed\":" + String(ScrollingTextControl::speed());
+        body += ",\"textBefore\":" + String(ScrollingTextControl::beforePause());
+        body += ",\"textAfter\":" + String(ScrollingTextControl::afterPause());
+        body += ",\"textRepeat\":";
+        if (ScrollingTextControl::repeatMode() == ScrollingTextControl::RepeatMode::kOnce) body += "\"once\"";
+        else if (ScrollingTextControl::repeatMode() == ScrollingTextControl::RepeatMode::kCount) body += "\"count\"";
+        else body += "\"loop\"";
+        body += ",\"textRepeatCount\":" + String(ScrollingTextControl::repeatCount());
+        body += ",\"textDurationMs\":" + String(ScrollingTextControl::estimatedDurationMs());
         body += ",\"maxBrightness\":" + String(MAX_ALLOWED_BRIGHTNESS);
         body += ",\"uptimeMs\":" + String(millis());
         body += ",\"freeHeap\":" + String(ESP.getFreeHeap());
@@ -216,6 +244,22 @@ namespace
                 broadcastStatusNow();
                 broadcastFrameNow();
             }
+            else if (message.startsWith("text:"))
+            {
+                const String command = message.substring(5);
+                if (command == "start")
+                {
+                    TetrisControl::stop();
+                    ClockControl::setActive(false);
+                    DisplayControl::leaveDrawingMode();
+                    EffectControl::setPlaylistEnabled(false);
+                    ScrollingTextControl::start();
+                }
+                else if (command == "stop") ScrollingTextControl::stop();
+                else if (command == "clear") ScrollingTextControl::clear();
+                broadcastStatusNow();
+                broadcastFrameNow();
+            }
             else if (message.startsWith("frame:"))
             {
                 const String pixels = message.substring(6);
@@ -336,6 +380,148 @@ void WebDashboard::begin()
             sendJson(400, "{\"error\":\"Unknown Tetris command\"}");
             return;
         }
+        sendStatus();
+    });
+    server.on("/api/text", HTTP_POST, []()
+    {
+        if (server.header("X-Drawboard-Control") != "1")
+        {
+            sendJson(403, "{\"error\":\"Missing X-Drawboard-Control: 1 header\"}");
+            return;
+        }
+        if (server.hasArg("command"))
+        {
+            const String command = server.arg("command");
+            if (command == "start")
+            {
+                TetrisControl::stop();
+                if (ClockControl::active()) ClockControl::setActive(false);
+                DisplayControl::leaveDrawingMode();
+                EffectControl::setPlaylistEnabled(false);
+                ScrollingTextControl::start();
+            }
+            else if (command == "stop")
+            {
+                ScrollingTextControl::stop();
+            }
+            else if (command == "clear")
+            {
+                ScrollingTextControl::clear();
+            }
+            else
+            {
+                sendJson(400, "{\"error\":\"Unknown text command\"}");
+                return;
+            }
+            sendStatus();
+            return;
+        }
+        if (!server.hasArg("text") || server.arg("text").length() > 64)
+        {
+            sendJson(400, "{\"error\":\"text is required and limited to 64 characters\"}");
+            return;
+        }
+        const auto hexColor = [](const String& value, uint32_t& output) -> bool
+        {
+            if (value.length() != 7 || value[0] != '#') return false;
+            output = 0;
+            for (uint8_t i = 1; i < 7; ++i)
+            {
+                char c = value[i];
+                uint8_t digit;
+                if (c >= '0' && c <= '9') digit = c - '0';
+                else if (c >= 'a' && c <= 'f') digit = c - 'a' + 10;
+                else if (c >= 'A' && c <= 'F') digit = c - 'A' + 10;
+                else return false;
+                output = (output << 4) | digit;
+            }
+            return true;
+        };
+        uint32_t textColor = 0x75e4ca;
+        uint32_t backgroundColor = 0x000000;
+        if (server.hasArg("textColor") && !hexColor(server.arg("textColor"), textColor))
+        {
+            sendJson(400, "{\"error\":\"textColor must be #RRGGBB\"}");
+            return;
+        }
+        if (server.hasArg("backgroundColor") && !hexColor(server.arg("backgroundColor"), backgroundColor))
+        {
+            sendJson(400, "{\"error\":\"backgroundColor must be #RRGGBB\"}");
+            return;
+        }
+        uint8_t font = 1;
+        if (server.hasArg("font"))
+        {
+            const String value = server.arg("font");
+            if (value == "compact") font = 0;
+            else if (value == "normal") font = 1;
+            else if (value == "large") font = 2;
+            else
+            {
+                sendJson(400, "{\"error\":\"font must be compact, normal, or large\"}");
+                return;
+            }
+        }
+        bool left = true;
+        if (server.hasArg("direction"))
+        {
+            const String value = server.arg("direction");
+            if (value == "right") left = false;
+            else if (value != "left")
+            {
+                sendJson(400, "{\"error\":\"direction must be left or right\"}");
+                return;
+            }
+        }
+        char* end = nullptr;
+        uint8_t speed = server.hasArg("speed") ? static_cast<uint8_t>(strtol(server.arg("speed").c_str(), &end, 10)) : 5;
+        if (server.hasArg("speed") && (*end != '\0' || speed < 1 || speed > 10))
+        {
+            sendJson(400, "{\"error\":\"speed must be 1 through 10\"}");
+            return;
+        }
+        uint16_t beforePause = server.hasArg("before") ? static_cast<uint16_t>(strtoul(server.arg("before").c_str(), &end, 10)) : 500;
+        if (server.hasArg("before") && (*end != '\0' || beforePause > 5000))
+        {
+            sendJson(400, "{\"error\":\"before must be 0 through 5000 ms\"}");
+            return;
+        }
+        uint16_t afterPause = server.hasArg("after") ? static_cast<uint16_t>(strtoul(server.arg("after").c_str(), &end, 10)) : 500;
+        if (server.hasArg("after") && (*end != '\0' || afterPause > 5000))
+        {
+            sendJson(400, "{\"error\":\"after must be 0 through 5000 ms\"}");
+            return;
+        }
+        ScrollingTextControl::RepeatMode repeat = ScrollingTextControl::RepeatMode::kLoop;
+        uint8_t repeatCount = 1;
+        if (server.hasArg("repeat"))
+        {
+            const String value = server.arg("repeat");
+            if (value == "once") repeat = ScrollingTextControl::RepeatMode::kOnce;
+            else if (value == "count") repeat = ScrollingTextControl::RepeatMode::kCount;
+            else if (value == "loop") repeat = ScrollingTextControl::RepeatMode::kLoop;
+            else
+            {
+                sendJson(400, "{\"error\":\"repeat must be once, count, or loop\"}");
+                return;
+            }
+        }
+        if (server.hasArg("repeatCount"))
+        {
+            repeatCount = static_cast<uint8_t>(strtol(server.arg("repeatCount").c_str(), &end, 10));
+            if (*end != '\0' || repeatCount < 1 || repeatCount > 20)
+            {
+                sendJson(400, "{\"error\":\"repeatCount must be 1 through 20\"}");
+                return;
+            }
+        }
+        ScrollingTextControl::setText(server.arg("text").c_str());
+        ScrollingTextControl::setColors(textColor, backgroundColor);
+        ScrollingTextControl::setFont(font);
+        ScrollingTextControl::setDirection(left);
+        ScrollingTextControl::setSpeed(speed);
+        ScrollingTextControl::setPause(beforePause, afterPause);
+        ScrollingTextControl::setRepeat(repeat, repeatCount);
         sendStatus();
     });
     server.on("/api/frame", HTTP_POST, []()

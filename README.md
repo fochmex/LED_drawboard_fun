@@ -13,6 +13,8 @@ A local, browser-controlled **16×16 RGB LED display** built with an ESP32-S3. D
 - Use an automatic effect playlist
 - Adjust brightness within a safe limit
 - Display analog or binary clocks using network time
+- Play Tetris directly on the matrix from the dashboard
+- Scroll configurable text across the matrix with a matching browser preview
 - Synchronize the panel and settings across multiple browser sessions
 - Retain the active display through deep sleep
 
@@ -51,8 +53,29 @@ After connecting to Wi-Fi and synchronizing network time, the board can display:
 - **Binary clock** — 24-hour time represented in colored columns
 
 Clock displays use Europe/Berlin time, including CET/CEST daylight-saving changes.
+Both analog and binary clock styles have been tested on the physical matrix.
 
-> Binary clock mode is implemented but should be verified on the physical hardware.
+### Tetris
+
+Play a 10×16 Tetris board on the left side of the 16×16 matrix. The dashboard
+shows the score, cleared lines, level, and next piece. Use the on-screen
+controls or the keyboard: **Left/Right** move, **Up** rotates, **Down** soft
+drops, **Space** hard drops, **P** pauses/resumes, and **R** restarts.
+
+Starting Tetris leaves the current display mode and disables the automatic
+effect playlist. Use the dashboard to pause or restart the game.
+
+### Scrolling Text
+
+Enter up to 64 characters and preview the message on a 16×16 browser grid
+before displaying it. Configure text and background colors, compact/normal/large
+font, left/right direction, speed (1–10), pauses before and after each pass,
+and play-once, fixed-count (1–20), or continuous-loop repetition.
+
+Press **Start scrolling** to apply the selected settings and start playback;
+**Stop** ends playback and **Clear** removes the text. Editing
+settings changes the local preview, but does not update the board until
+**Start scrolling** is pressed.
 
 ## Quick Start
 
@@ -177,6 +200,8 @@ A 256-pixel WS2812B matrix may theoretically draw up to approximately **15.36 A*
 | 5. Drawing and brightness | Completed |
 | 6. Live WebSocket updates | Completed |
 | 6.5. Clock displays | Implemented |
+| 6.6. Tetris game | Implemented |
+| 6.7. Scrolling text | Implemented |
 | 7. Persistent storage | Planned |
 | 8. Enclosure and commissioning | Planned |
 
@@ -187,6 +212,8 @@ A 256-pixel WS2812B matrix may theoretically draw up to approximately **15.36 A*
 | `src/main.cpp` | Main firmware, effects, button handling, and state |
 | `src/NetworkManager.cpp` | Wi-Fi connection and reconnection |
 | `src/WebDashboard.cpp` | HTTP and WebSocket communication |
+| `src/TetrisControl.cpp` | Tetris game state and rules |
+| `src/ScrollingTextControl.cpp` | Scrolling-text rendering and playback |
 | `include/DashboardPage.h` | Browser dashboard interface |
 | `include/ProjectConfig.h` | Dimensions and timing settings |
 | `include/PinConfig.h` | GPIO assignments |
@@ -219,7 +246,6 @@ A 256-pixel WS2812B matrix may theoretically draw up to approximately **15.36 A*
 - The dashboard has no authentication or HTTPS.
 - Drawings and settings may not survive a power cycle.
 - The HTTP server is designed for a small, trusted local network.
-- Binary clock hardware verification is pending.
 - No formal release package or license is currently provided.
 
 ## License

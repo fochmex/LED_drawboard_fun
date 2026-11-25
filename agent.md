@@ -18,7 +18,7 @@ This project is a staged embedded electronics and firmware effort to build a bro
 2. Prove the electrical design and matrix mapping are correct.
 3. Only then add networking, UI, persistence, and product features.
 
-The repository has progressed through Stage 6.5. Stage 6 and the analog NTP clock are accepted; the added binary clock style awaits hardware acceptance.
+The repository has progressed through Stage 6.7. Stage 6 and both NTP clock styles are tested on hardware; Tetris and scrolling text are implemented.
 
 ## Current status
 
@@ -26,7 +26,8 @@ Implemented / active:
 - 16x16 ESP32-S3 matrix control, effects, and walking cat
 - Wi-Fi, local HTTP dashboard, and live WebSocket status/frame synchronization
 - Browser drawing studio and brightness controls
-- Optional Europe/Berlin NTP analog and binary clock styles (analog accepted; binary hardware check pending)
+- Optional Europe/Berlin NTP analog and binary clock styles (both tested on hardware)
+- Dashboard Tetris game and configurable scrolling text
 - Deep-sleep/wake display restoration
 
 Not yet implemented:
@@ -47,7 +48,7 @@ This repository is organized around these stages:
 - Stage 7: Persistence and configuration
 - Stage 8: Enclosure and commissioning
 
-Current repository status: Stages 1-6 and the Stage 6.5 analog clock are accepted; the Stage 6.5 binary clock style is implemented and awaiting hardware acceptance.
+Current repository status: Stages 1-6 and both Stage 6.5 clock styles are tested on hardware. Tetris and scrolling text are implemented; persistence and enclosure work remain.
 
 ## Hardware architecture
 

@@ -22,8 +22,11 @@ The firmware now plays this repeating playlist instead of the hardware tests:
 7. **Fireworks:** colorful rockets and expanding sparks against black.
 8. **Color-changing fish:** a slowly color-shifting fish swims between
    pseudo-random positions against black, turning and wagging its tail.
+9. **Walking cat:** a small side-view cat walks between waypoints, turns, and
+   alternates its legs and tail movement.
 
-The two new effects clear unoccupied pixels every frame: no background glow or trails.
+Fireworks and fish clear unoccupied pixels every frame: no background glow or
+trails.
 
 Effects change automatically every **20 seconds** by default. The web dashboard
 can select a single effect or toggle the automatic playlist. **Short-press and release**

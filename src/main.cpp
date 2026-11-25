@@ -15,6 +15,7 @@
 #include "DisplayControl.h"
 #include "WebDashboard.h"
 #include "TetrisControl.h"
+#include "ScrollingTextControl.h"
 
 namespace
 {
@@ -190,6 +191,7 @@ namespace
     void selectEffect(uint8_t index)
     {
         TetrisControl::stop();
+        ScrollingTextControl::stop();
         drawingMode = false;
         clockMode = false;
         currentEffect = static_cast<Effect>(index);
@@ -827,6 +829,7 @@ bool ClockControl::setActive(bool enabled)
     {
         if (!available()) return false;
         TetrisControl::stop();
+        ScrollingTextControl::stop();
         drawingMode = false;
         clockMode = true;
         autoPlaylist = false;
@@ -886,6 +889,7 @@ bool DisplayControl::drawing()
 
 void DisplayControl::leaveDrawingMode()
 {
+    ScrollingTextControl::stop();
     drawingMode = false;
     clockMode = false;
     autoPlaylist = false;
@@ -970,6 +974,7 @@ bool DisplayControl::applyFrame(const char* hex, size_t length)
         }
     }
     TetrisControl::stop();
+    ScrollingTextControl::stop();
     drawingMode = true;
     clockMode = false;
     autoPlaylist = false;
@@ -1052,14 +1057,34 @@ void loop()
     WebDashboard::update();
 
     uint32_t nowMs = millis();
-    if (!TetrisControl::active() && !clockMode && autoPlaylist &&
+    if (!ScrollingTextControl::active() && !TetrisControl::active() && !clockMode && autoPlaylist &&
         (nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
     {
         nextEffect();
         nowMs = millis();
     }
 
-    if (TetrisControl::active())
+    if (ScrollingTextControl::active())
+    {
+        ScrollingTextControl::update(nowMs);
+        if ((nowMs - lastFrameMs) >= 40U)
+        {
+            lastFrameMs = nowMs;
+            FastLED.clear(false);
+            for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+            {
+                for (uint8_t x = 0; x < MATRIX_WIDTH; ++x)
+                {
+                    const uint32_t packed = ScrollingTextControl::pixelColor(x, y);
+                    setPixel(x, y, CRGB(static_cast<uint8_t>((packed >> 16) & 0xff),
+                                        static_cast<uint8_t>((packed >> 8) & 0xff),
+                                        static_cast<uint8_t>(packed & 0xff)));
+                }
+            }
+            FastLED.show();
+        }
+    }
+    else if (TetrisControl::active())
     {
         TetrisControl::update(nowMs);
         if ((nowMs - lastFrameMs) >= 40U)

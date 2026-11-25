@@ -30,6 +30,7 @@ input[type=number]{font:inherit;width:110px;padding:10px;background:#101522;colo
 #drawing-grid button{aspect-ratio:1;padding:0;min-width:0;border:1px solid #60748e;border-radius:2px}
 #drawing-grid button:focus-visible{outline-offset:0;z-index:1}
 .actions{display:flex;flex-wrap:wrap;gap:10px}#draft-status{min-height:1.5em}
+#text-preview{display:grid;grid-template-columns:repeat(16,minmax(0,1fr));gap:1px;max-width:320px;aspect-ratio:1;margin:12px 0}.text-preview-cell{aspect-ratio:1;padding:0;min-width:0;border:0;border-radius:1px;background:#000}
 .tetris-layout{display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:18px;align-items:start}.tetris-controls{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tetris-controls button{padding:10px}.tetris-controls .wide{grid-column:span 2}.tetris-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tetris-stats strong{display:block;font-size:1.25rem}@media(max-width:620px){.tetris-layout{grid-template-columns:1fr}}
 </style>
 </head>
@@ -58,6 +59,19 @@ A short physical button press advances one effect without changing the playback 
 <button id="tetris-left" type="button" disabled>←<br>Left</button><button id="tetris-rotate" type="button" disabled>↻<br>Rotate</button><button id="tetris-right" type="button" disabled>→<br>Right</button>
 <button id="tetris-soft" type="button" disabled>↓<br>Soft drop</button><button id="tetris-hard" class="wide" type="button" disabled>Hard drop</button>
 </div></div><small>Keyboard: Left/Right arrows move, Up rotates, Down soft drops, Space hard drops, P pauses, R restarts.</small>
+</section>
+<section><h2>Scrolling text</h2>
+<p>Enter a message, configure playback, and preview it at 16 x 16 resolution. Press Start scrolling to apply setting changes.</p>
+<label for="text-message">Message (<span id="text-count">0</span>/64)</label><input id="text-message" type="text" maxlength="64" value="HELLO" disabled>
+<div class="tools"><label for="text-color">Text color<input id="text-color" type="color" value="#75e4ca"></label><label for="text-background">Background<input id="text-background" type="color" value="#000000"></label>
+<label for="text-font">Font<select id="text-font"><option value="compact">Compact</option><option value="normal">Normal</option><option value="large">Large</option></select></label>
+<label for="text-direction">Direction<select id="text-direction"><option value="left">Left</option><option value="right">Right</option></select></label></div>
+<div class="tools"><label for="text-speed">Speed (<span id="text-speed-value">5</span>/10)<input id="text-speed" type="range" min="1" max="10" value="5"></label>
+<label for="text-before">Pause before (ms)<input id="text-before" type="number" min="0" max="5000" value="500"></label><label for="text-after">Pause after (ms)<input id="text-after" type="number" min="0" max="5000" value="500"></label>
+<label for="text-repeat">Repeat<select id="text-repeat"><option value="once">Play once</option><option value="count">Fixed count</option><option value="loop">Loop</option></select></label><label for="text-repeat-count">Repeat count<input id="text-repeat-count" type="number" min="1" max="20" value="1"></label></div>
+<div id="text-preview" aria-label="16 by 16 text preview"></div>
+<div class="actions"><button id="text-start" type="button" disabled>Start scrolling</button><button id="text-stop" type="button" disabled>Stop</button><button id="text-clear" type="button" disabled>Clear</button></div>
+<p id="text-summary" role="status">Estimated duration: --</p>
 </section>
 <section><h2>Drawing studio</h2>
 <p>Draw locally, then press <b>Apply drawing</b> to show it on the LEDs and pause effects.
@@ -94,12 +108,13 @@ not power removal. A static drawing sleeps after 60 minutes without LED changes.
 const byId = id => document.getElementById(id);
 let ready = false, commandPending = false, initialized = false;
 let clockAvailable = false, clockMode = false;
+let textSettingsDirty = false;
 let commandVersion = 0;
 let liveSocket = null, liveHeartbeat = null, liveReconnectTimer = null;
 let liveReconnectDelay = 1000;
 function enableControls() {
   const disabled = !ready || commandPending;
-  for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness', 'tetris-start', 'tetris-pause', 'tetris-restart', 'tetris-left', 'tetris-rotate', 'tetris-right', 'tetris-soft', 'tetris-hard']) {
+  for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness', 'tetris-start', 'tetris-pause', 'tetris-restart', 'tetris-left', 'tetris-rotate', 'tetris-right', 'tetris-soft', 'tetris-hard', 'text-message', 'text-color', 'text-background', 'text-font', 'text-direction', 'text-speed', 'text-before', 'text-after', 'text-repeat', 'text-repeat-count', 'text-start', 'text-stop', 'text-clear']) {
     if (byId(id).disabled !== disabled) byId(id).disabled = disabled;
   }
   byId('clock-style').disabled = disabled || !clockAvailable;
@@ -134,18 +149,36 @@ function showStatus(data) {
   clockAvailable = data.clockAvailable;
   clockMode = data.clockMode;
   if (document.activeElement !== byId('clock-style')) byId('clock-style').value = data.clockStyle;
-  byId('playing').textContent = data.tetrisActive ?
+  byId('playing').textContent = data.textActive ?
+    `Scrolling text / ${data.text}` :
+    (data.tetrisActive ?
     `Tetris / ${data.tetrisGameOver ? 'Game over' : (data.tetrisPaused ? 'Paused' : 'Playing')}` :
     (data.clockMode ?
       `${data.clockStyle === 'binary' ? 'Binary' : 'Analog'} clock / ${data.clockTime || 'syncing'}` :
       (data.drawing ? 'Drawing / Static image' :
-        `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`));
+        `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`)));
   byId('tetris-score').textContent = data.tetrisScore;
   byId('tetris-level').textContent = data.tetrisLevel;
   byId('tetris-lines').textContent = data.tetrisLines;
   byId('tetris-status').textContent = data.tetrisActive ?
     (data.tetrisGameOver ? 'Game over — restart to play again' : (data.tetrisPaused ? 'Paused' : 'Playing')) : 'Ready';
   byId('tetris-pause').textContent = data.tetrisPaused ? 'Resume' : 'Pause';
+  if (!textSettingsDirty) {
+    byId('text-message').value = data.text;
+    byId('text-count').textContent = data.text.length;
+    byId('text-color').value = data.textColor;
+    byId('text-background').value = data.textBackground;
+    byId('text-font').value = ['compact','normal','large'][data.textFont] || 'normal';
+    byId('text-direction').value = data.textDirection;
+    byId('text-speed').value = data.textSpeed;
+    byId('text-before').value = data.textBefore;
+    byId('text-after').value = data.textAfter;
+    byId('text-repeat').value = data.textRepeat;
+    byId('text-repeat-count').value = data.textRepeatCount;
+  }
+  byId('text-speed-value').textContent = byId('text-speed').value;
+  byId('text-summary').textContent = `Estimated duration: ${(data.textDurationMs / 1000).toFixed(1)} seconds${data.textActive ? ' (playing)' : ''}`;
+  updateTextPreview();
   if (!initialized) {
     for (const effect of data.effects) {
       const option = document.createElement('option');
@@ -227,6 +260,102 @@ document.addEventListener('keydown', event => {
     sendTetris(commands[key]);
   }
 });
+const textPreviewCells = [];
+for (let i = 0; i < 256; ++i) {
+  const cell = document.createElement('span');
+  cell.className = 'text-preview-cell';
+  textPreviewCells.push(cell);
+  byId('text-preview').appendChild(cell);
+}
+const previewFont = {
+  A:[0x00,0x7c,0x12,0x11,0x12,0x7c,0x00],B:[0x7f,0x49,0x49,0x49,0x49,0x36,0x00],C:[0x3e,0x41,0x41,0x41,0x41,0x22,0x00],D:[0x7f,0x41,0x41,0x41,0x22,0x1c,0x00],E:[0x7f,0x49,0x49,0x49,0x49,0x41,0x00],F:[0x7f,0x09,0x09,0x09,0x09,0x01,0x00],G:[0x3e,0x41,0x49,0x49,0x49,0x32,0x00],H:[0x7f,0x08,0x08,0x08,0x08,0x7f,0x00],I:[0x41,0x41,0x7f,0x41,0x41,0x41,0x00],J:[0x20,0x40,0x41,0x3f,0x01,0x01,0x00],K:[0x7f,0x08,0x14,0x22,0x41,0x00,0x00],L:[0x7f,0x40,0x40,0x40,0x40,0x40,0x00],M:[0x7f,0x02,0x04,0x08,0x04,0x02,0x7f],N:[0x7f,0x02,0x04,0x08,0x10,0x7f,0x00],O:[0x3e,0x41,0x41,0x41,0x41,0x3e,0x00],P:[0x7f,0x09,0x09,0x09,0x09,0x06,0x00],Q:[0x3e,0x41,0x51,0x21,0x41,0x5e,0x00],R:[0x7f,0x09,0x19,0x29,0x49,0x46,0x00],S:[0x46,0x49,0x49,0x49,0x49,0x31,0x00],T:[0x01,0x01,0x7f,0x01,0x01,0x01,0x00],U:[0x3f,0x40,0x40,0x40,0x40,0x3f,0x00],V:[0x1f,0x20,0x40,0x20,0x1f,0x00,0x00],W:[0x7f,0x40,0x38,0x40,0x7f,0x00,0x00],X:[0x63,0x14,0x08,0x14,0x63,0x00,0x00],Y:[0x03,0x04,0x78,0x04,0x03,0x00,0x00],Z:[0x61,0x51,0x49,0x45,0x43,0x00,0x00],
+  '0':[0x3e,0x51,0x49,0x45,0x3e,0x00,0x00],'1':[0x00,0x42,0x7f,0x40,0x00,0x00,0x00],'2':[0x42,0x61,0x51,0x49,0x46,0x00,0x00],'3':[0x21,0x41,0x45,0x4b,0x31,0x00,0x00],'4':[0x18,0x14,0x12,0x7f,0x10,0x00,0x00],'5':[0x27,0x45,0x45,0x45,0x39,0x00,0x00],'6':[0x3c,0x46,0x49,0x49,0x30,0x00,0x00],'7':[0x01,0x71,0x09,0x05,0x03,0x00,0x00],'8':[0x36,0x49,0x49,0x49,0x36,0x00,0x00],'9':[0x06,0x49,0x49,0x29,0x1e,0x00,0x00],
+  ' ':[0,0,0,0,0,0,0],'!':[0,0,0x5f,0,0,0,0],'?':[0,0x03,0x05,0x03,0,0,0],'.':[0,0x60,0x60,0,0,0,0],':':[0x36,0x36,0,0,0,0,0],'-':[0x08,0x08,0x08,0x08,0x08,0x08,0x08],'+':[0x08,0x08,0x3e,0x08,0x08,0x08,0],'/':[0x20,0x10,0x08,0x04,0x02,0,0],'#':[0x14,0x14,0x7f,0x14,0x14,0x7f,0x14],'_':[0x40,0x40,0x40,0x40,0x40,0x40,0x40]
+};
+function previewGlyph(ch) {
+  ch = ch.toUpperCase();
+  return previewFont[ch] || previewFont['?'];
+}
+function updateTextPreview() {
+  const text = byId('text-message').value.toUpperCase().slice(0,64);
+  const font = byId('text-font').value;
+  const fg = byId('text-color').value;
+  const bg = byId('text-background').value;
+  const scale = font === 'large' ? 2 : 1;
+  const charWidth = font === 'compact' ? 5 : (font === 'large' ? 14 : 7);
+  const spacing = charWidth + 1;
+  const yOffset = font === 'large' ? 1 : 4;
+  const textWidth = text.length * spacing;
+  let baseX = Math.max(0, Math.floor((16 - textWidth) / 2));
+  textPreviewCells.forEach((cell,index) => {
+    const x = index % 16, y = Math.floor(index / 16);
+    let on = false;
+    if (text && y >= yOffset && y < yOffset + 7 * scale) {
+      const localColumn = x - baseX;
+      if (localColumn >= 0) {
+        const ci = Math.floor(localColumn / spacing);
+        const cx = localColumn % spacing;
+        if (ci < text.length && cx < charWidth) {
+          const sy = Math.floor((y - yOffset) / scale);
+          const pattern = previewGlyph(text[ci]);
+          if (font === 'compact') {
+            for (let sx = 0; sx < 7; ++sx) {
+              if (Math.floor(sx * charWidth / 7) === cx && (pattern[sx] & (1 << sy)) !== 0) {
+                on = true;
+                break;
+              }
+            }
+          } else {
+            const sx = Math.floor(cx / scale);
+            if (sx < 7) on = (pattern[sx] & (1 << sy)) !== 0;
+          }
+        }
+      }
+    }
+    cell.style.backgroundColor = on ? fg : bg;
+  });
+}
+['text-message','text-color','text-background','text-font'].forEach(id => byId(id).addEventListener('input', updateTextPreview));
+async function configureAndStartText() {
+  if (!ready || commandPending) return;
+  const values = {
+    text: byId('text-message').value,
+    textColor: byId('text-color').value,
+    backgroundColor: byId('text-background').value,
+    font: byId('text-font').value,
+    direction: byId('text-direction').value,
+    speed: byId('text-speed').value,
+    before: byId('text-before').value,
+    after: byId('text-after').value,
+    repeat: byId('text-repeat').value,
+    repeatCount: byId('text-repeat-count').value
+  };
+  if (await control('/api/text', values, 'Text settings updated.')) {
+    textSettingsDirty = false;
+    if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send('text:start');
+    else control('/api/text', {command:'start'}, 'Scrolling text started.');
+  }
+}
+byId('text-start').addEventListener('click', configureAndStartText);
+byId('text-stop').addEventListener('click', () => {
+  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send('text:stop');
+  else control('/api/text', {command:'stop'}, 'Scrolling text stopped.');
+});
+byId('text-clear').addEventListener('click', () => {
+  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) liveSocket.send('text:clear');
+  else control('/api/text', {command:'clear'}, 'Scrolling text cleared.');
+});
+for (const id of ['text-message', 'text-color', 'text-background', 'text-font', 'text-direction',
+                  'text-speed', 'text-before', 'text-after', 'text-repeat', 'text-repeat-count']) {
+  const markTextSettingsDirty = () => {
+    textSettingsDirty = true;
+    if (id === 'text-message') byId('text-count').textContent = byId('text-message').value.length;
+    if (id === 'text-speed') byId('text-speed-value').textContent = byId('text-speed').value;
+    updateTextPreview();
+  };
+  byId(id).addEventListener('input', markTextSettingsDirty);
+  byId(id).addEventListener('change', markTextSettingsDirty);
+}
 const draft = Array(256).fill('000000');
 const cells = [];
 let draftVersion = 0;
