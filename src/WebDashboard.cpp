@@ -9,6 +9,7 @@
 #include "DisplayControl.h"
 #include "ProjectConfig.h"
 #include "WebDashboard.h"
+#include "TetrisControl.h"
 
 namespace
 {
@@ -59,6 +60,16 @@ namespace
             body += timeText;
         }
         body += '"';
+        body += ",\"tetrisActive\":";
+        body += TetrisControl::active() ? "true" : "false";
+        body += ",\"tetrisPaused\":";
+        body += TetrisControl::paused() ? "true" : "false";
+        body += ",\"tetrisGameOver\":";
+        body += TetrisControl::gameOver() ? "true" : "false";
+        body += ",\"tetrisScore\":" + String(TetrisControl::score());
+        body += ",\"tetrisLines\":" + String(TetrisControl::lines());
+        body += ",\"tetrisLevel\":" + String(TetrisControl::level());
+        body += ",\"tetrisNext\":" + String(TetrisControl::nextPieceType());
         body += ",\"maxBrightness\":" + String(MAX_ALLOWED_BRIGHTNESS);
         body += ",\"uptimeMs\":" + String(millis());
         body += ",\"freeHeap\":" + String(ESP.getFreeHeap());
@@ -185,6 +196,26 @@ namespace
                     DisplayControl::setBrightness(static_cast<uint16_t>(brightness));
                 }
             }
+            else if (message.startsWith("tetris:"))
+            {
+                const String command = message.substring(7);
+                if (command == "start" || command == "restart")
+                {
+                    if (ClockControl::active()) ClockControl::setActive(false);
+                    DisplayControl::leaveDrawingMode();
+                    if (command == "restart") TetrisControl::restart();
+                    else TetrisControl::start();
+                    EffectControl::setPlaylistEnabled(false);
+                }
+                else if (command == "pause") TetrisControl::togglePause();
+                else if (command == "left") TetrisControl::moveLeft();
+                else if (command == "right") TetrisControl::moveRight();
+                else if (command == "rotate") TetrisControl::rotate();
+                else if (command == "soft") TetrisControl::softDrop();
+                else if (command == "hard") TetrisControl::hardDrop();
+                broadcastStatusNow();
+                broadcastFrameNow();
+            }
             else if (message.startsWith("frame:"))
             {
                 const String pixels = message.substring(6);
@@ -278,6 +309,31 @@ void WebDashboard::begin()
         if (!ClockControl::setStyle(selectedStyle))
         {
             sendJson(503, "{\"error\":\"Clock style could not be changed\"}");
+            return;
+        }
+        sendStatus();
+    });
+    server.on("/api/tetris", HTTP_POST, []()
+    {
+        if (!validateControl("command")) return;
+        const String command = server.arg("command");
+        if (command == "start" || command == "restart")
+        {
+            if (ClockControl::active()) ClockControl::setActive(false);
+            DisplayControl::leaveDrawingMode();
+            if (command == "restart") TetrisControl::restart();
+            else TetrisControl::start();
+            EffectControl::setPlaylistEnabled(false);
+        }
+        else if (command == "pause") TetrisControl::togglePause();
+        else if (command == "left") TetrisControl::moveLeft();
+        else if (command == "right") TetrisControl::moveRight();
+        else if (command == "rotate") TetrisControl::rotate();
+        else if (command == "soft") TetrisControl::softDrop();
+        else if (command == "hard") TetrisControl::hardDrop();
+        else
+        {
+            sendJson(400, "{\"error\":\"Unknown Tetris command\"}");
             return;
         }
         sendStatus();

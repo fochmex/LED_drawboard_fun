@@ -6,6 +6,7 @@
 namespace DisplayControl
 {
     bool drawing();
+    void leaveDrawingMode();
     uint8_t brightness();
     bool setBrightness(uint16_t value);
     bool applyFrame(const char* hex, size_t length);

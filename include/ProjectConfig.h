@@ -54,7 +54,7 @@ static_assert(MAX_ALLOWED_BRIGHTNESS <= POWER_BRIGHTNESS_CEILING,
 
 // Initial global brightness after startup.
 // 10 of 255 is approximately 3.9%.
-#define STARTUP_BRIGHTNESS 10
+#define STARTUP_BRIGHTNESS 5
 
 // Recommended maximum brightness during the Stage 1 hardware tests.
 // 64 of 255 is approximately 25%.

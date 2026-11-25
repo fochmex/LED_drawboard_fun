@@ -30,6 +30,7 @@ input[type=number]{font:inherit;width:110px;padding:10px;background:#101522;colo
 #drawing-grid button{aspect-ratio:1;padding:0;min-width:0;border:1px solid #60748e;border-radius:2px}
 #drawing-grid button:focus-visible{outline-offset:0;z-index:1}
 .actions{display:flex;flex-wrap:wrap;gap:10px}#draft-status{min-height:1.5em}
+.tetris-layout{display:grid;grid-template-columns:minmax(180px,260px) 1fr;gap:18px;align-items:start}.tetris-controls{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.tetris-controls button{padding:10px}.tetris-controls .wide{grid-column:span 2}.tetris-stats{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.tetris-stats strong{display:block;font-size:1.25rem}@media(max-width:620px){.tetris-layout{grid-template-columns:1fr}}
 </style>
 </head>
 <body>
@@ -47,6 +48,16 @@ Each reads top to bottom as 32, 16, 8, 4, 2, 1; bright markers are set bits and 
 <p id="message" role="status" aria-live="polite"></p>
 <small>Playing a selected effect turns off the playlist. Clock styles become available after Wi-Fi time synchronization.
 A short physical button press advances one effect without changing the playback mode.</small>
+</section>
+<section><h2>Tetris</h2>
+<p>Play on the left 10 columns of the 16 x 16 matrix. The side panel shows the next piece and level.</p>
+<div class="tetris-layout"><div>
+<div class="tetris-stats"><dl><dt>Score</dt><dd><strong id="tetris-score">0</strong></dd></dl><dl><dt>Level</dt><dd><strong id="tetris-level">1</strong></dd></dl><dl><dt>Lines</dt><dd><strong id="tetris-lines">0</strong></dd></dl></div>
+<p id="tetris-status">Ready</p><div class="actions"><button id="tetris-start" type="button" disabled>Start</button><button id="tetris-pause" type="button" disabled>Pause</button><button id="tetris-restart" type="button" disabled>Restart</button></div>
+</div><div class="tetris-controls" aria-label="Tetris controls">
+<button id="tetris-left" type="button" disabled>←<br>Left</button><button id="tetris-rotate" type="button" disabled>↻<br>Rotate</button><button id="tetris-right" type="button" disabled>→<br>Right</button>
+<button id="tetris-soft" type="button" disabled>↓<br>Soft drop</button><button id="tetris-hard" class="wide" type="button" disabled>Hard drop</button>
+</div></div><small>Keyboard: Left/Right arrows move, Up rotates, Down soft drops, Space hard drops, P pauses, R restarts.</small>
 </section>
 <section><h2>Drawing studio</h2>
 <p>Draw locally, then press <b>Apply drawing</b> to show it on the LEDs and pause effects.
@@ -88,7 +99,7 @@ let liveSocket = null, liveHeartbeat = null, liveReconnectTimer = null;
 let liveReconnectDelay = 1000;
 function enableControls() {
   const disabled = !ready || commandPending;
-  for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness']) {
+  for (const id of ['effect', 'apply', 'playlist', 'apply-drawing', 'brightness-value', 'apply-brightness', 'tetris-start', 'tetris-pause', 'tetris-restart', 'tetris-left', 'tetris-rotate', 'tetris-right', 'tetris-soft', 'tetris-hard']) {
     if (byId(id).disabled !== disabled) byId(id).disabled = disabled;
   }
   byId('clock-style').disabled = disabled || !clockAvailable;
@@ -123,10 +134,18 @@ function showStatus(data) {
   clockAvailable = data.clockAvailable;
   clockMode = data.clockMode;
   if (document.activeElement !== byId('clock-style')) byId('clock-style').value = data.clockStyle;
-  byId('playing').textContent = data.clockMode ?
-    `${data.clockStyle === 'binary' ? 'Binary' : 'Analog'} clock / ${data.clockTime || 'syncing'}` :
-    (data.drawing ? 'Drawing / Static image' :
-      `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`);
+  byId('playing').textContent = data.tetrisActive ?
+    `Tetris / ${data.tetrisGameOver ? 'Game over' : (data.tetrisPaused ? 'Paused' : 'Playing')}` :
+    (data.clockMode ?
+      `${data.clockStyle === 'binary' ? 'Binary' : 'Analog'} clock / ${data.clockTime || 'syncing'}` :
+      (data.drawing ? 'Drawing / Static image' :
+        `${data.effectName} / ${data.playlist ? 'Automatic playlist' : 'Single effect'}`));
+  byId('tetris-score').textContent = data.tetrisScore;
+  byId('tetris-level').textContent = data.tetrisLevel;
+  byId('tetris-lines').textContent = data.tetrisLines;
+  byId('tetris-status').textContent = data.tetrisActive ?
+    (data.tetrisGameOver ? 'Game over — restart to play again' : (data.tetrisPaused ? 'Paused' : 'Playing')) : 'Ready';
+  byId('tetris-pause').textContent = data.tetrisPaused ? 'Resume' : 'Pause';
   if (!initialized) {
     for (const effect of data.effects) {
       const option = document.createElement('option');
@@ -180,6 +199,32 @@ byId('clock-toggle').addEventListener('click', () => {
 byId('clock-style').addEventListener('change', () => {
   if (ready && !commandPending && clockAvailable) {
     control('/api/clock-style', {style: byId('clock-style').value}, 'Clock style updated.');
+  }
+});
+const tetrisCommands = {
+  'tetris-start': 'start', 'tetris-pause': 'pause', 'tetris-restart': 'restart',
+  'tetris-left': 'left', 'tetris-rotate': 'rotate', 'tetris-right': 'right',
+  'tetris-soft': 'soft', 'tetris-hard': 'hard'
+};
+function sendTetris(command) {
+  if (!ready || commandPending) return;
+  if (liveSocket && liveSocket.readyState === WebSocket.OPEN) {
+    liveSocket.send(`tetris:${command}`);
+    message('Tetris updated.');
+  } else {
+    control('/api/tetris', {command}, 'Tetris updated.');
+  }
+}
+for (const [id, command] of Object.entries(tetrisCommands)) {
+  byId(id).addEventListener('click', () => sendTetris(command));
+}
+document.addEventListener('keydown', event => {
+  if (!ready || commandPending || event.target instanceof HTMLInputElement || event.target instanceof HTMLSelectElement) return;
+  const commands = {ArrowLeft:'left', ArrowRight:'right', ArrowUp:'rotate', ArrowDown:'soft', ' ':'hard', p:'pause', r:'restart'};
+  const key = event.key.length === 1 ? event.key.toLowerCase() : event.key;
+  if (commands[key]) {
+    event.preventDefault();
+    sendTetris(commands[key]);
   }
 });
 const draft = Array(256).fill('000000');

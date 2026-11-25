@@ -14,6 +14,7 @@
 #include "ClockControl.h"
 #include "DisplayControl.h"
 #include "WebDashboard.h"
+#include "TetrisControl.h"
 
 namespace
 {
@@ -65,6 +66,7 @@ namespace
     static RTC_DATA_ATTR bool rtcAutoPlaylist = true;
     static RTC_DATA_ATTR bool rtcDrawingMode = false;
     static RTC_DATA_ATTR bool rtcClockMode = false;
+    static RTC_DATA_ATTR bool rtcTetrisMode = false;
     static RTC_DATA_ATTR uint8_t rtcClockStyle = 0;
     static RTC_DATA_ATTR uint8_t rtcBrightness = STARTUP_BRIGHTNESS;
 
@@ -88,6 +90,7 @@ namespace
         rtcAutoPlaylist = autoPlaylist;
         rtcDrawingMode = drawingMode;
         rtcClockMode = clockMode;
+        rtcTetrisMode = TetrisControl::active();
         rtcClockStyle = static_cast<uint8_t>(clockStyle);
         rtcBrightness = FastLED.getBrightness();
         rtcFrameValid = true;
@@ -111,6 +114,13 @@ namespace
         clockStyle = rtcClockStyle <= static_cast<uint8_t>(ClockControl::Style::kBinary)
                          ? static_cast<ClockControl::Style>(rtcClockStyle)
                          : ClockControl::Style::kAnalog;
+        if (rtcTetrisMode)
+        {
+            TetrisControl::start();
+            drawingMode = false;
+            clockMode = false;
+            autoPlaylist = false;
+        }
         lastClockSecond = -1;
         FastLED.setBrightness(rtcBrightness > MAX_ALLOWED_BRIGHTNESS
                                   ? MAX_ALLOWED_BRIGHTNESS : rtcBrightness);
@@ -179,6 +189,7 @@ namespace
 
     void selectEffect(uint8_t index)
     {
+        TetrisControl::stop();
         drawingMode = false;
         clockMode = false;
         currentEffect = static_cast<Effect>(index);
@@ -435,6 +446,69 @@ namespace
         const int16_t secondY = static_cast<int16_t>(lroundf(centerY - cosf(secondAngle) * 6.0F));
         plotEffectPixel(secondX, secondY, CRGB(40, 220, 180));
         plotEffectPixel(centerX, centerY, CRGB(255, 255, 255));
+
+        FastLED.show();
+        markLedActivity();
+    }
+
+    void renderTetris()
+    {
+        FastLED.clear(false);
+        for (uint8_t y = 0; y < MATRIX_HEIGHT; ++y)
+        {
+            for (uint8_t x = 0; x < 10U; ++x)
+            {
+                const uint32_t packed = TetrisControl::boardColor(x, y);
+                if (packed != 0)
+                {
+                    setPixel(x, y, CRGB(static_cast<uint8_t>((packed >> 16) & 0xff),
+                                        static_cast<uint8_t>((packed >> 8) & 0xff),
+                                        static_cast<uint8_t>(packed & 0xff)));
+                }
+            }
+        }
+
+        // Next-piece preview in columns 11-14.
+        const uint32_t nextType = TetrisControl::nextPieceType();
+        const uint32_t previewColor = TetrisControl::nextColor();
+        int8_t previewX[4], previewY[4];
+        switch (nextType)
+        {
+            case 0: previewX[0]=0; previewY[0]=1; previewX[1]=1; previewY[1]=1; previewX[2]=2; previewY[2]=1; previewX[3]=3; previewY[3]=1; break;
+            case 1: previewX[0]=1; previewY[0]=0; previewX[1]=2; previewY[1]=0; previewX[2]=1; previewY[2]=1; previewX[3]=2; previewY[3]=1; break;
+            case 2: previewX[0]=1; previewY[0]=0; previewX[1]=0; previewY[1]=1; previewX[2]=1; previewY[2]=1; previewX[3]=2; previewY[3]=1; break;
+            case 3: previewX[0]=1; previewY[0]=0; previewX[1]=2; previewY[1]=0; previewX[2]=0; previewY[2]=1; previewX[3]=1; previewY[3]=1; break;
+            case 4: previewX[0]=0; previewY[0]=0; previewX[1]=1; previewY[1]=0; previewX[2]=1; previewY[2]=1; previewX[3]=2; previewY[3]=1; break;
+            case 5: previewX[0]=0; previewY[0]=0; previewX[1]=0; previewY[1]=1; previewX[2]=1; previewY[2]=1; previewX[3]=2; previewY[3]=1; break;
+            default: previewX[0]=2; previewY[0]=0; previewX[1]=0; previewY[1]=1; previewX[2]=1; previewY[2]=1; previewX[3]=2; previewY[3]=1; break;
+        }
+        for (uint8_t i = 0; i < 4; ++i)
+        {
+            setPixel(static_cast<uint8_t>(11 + previewX[i]), static_cast<uint8_t>(1 + previewY[i]),
+                     CRGB(static_cast<uint8_t>((previewColor >> 16) & 0xff),
+                          static_cast<uint8_t>((previewColor >> 8) & 0xff),
+                          static_cast<uint8_t>(previewColor & 0xff)));
+        }
+
+        // Level is a six-column vertical indicator in the remaining panel.
+        const uint8_t level = TetrisControl::level();
+        const uint8_t lit = level > 8 ? 8 : level;
+        for (uint8_t y = 14; y >= 7 && y < MATRIX_HEIGHT; --y)
+        {
+            if (y >= 15U - lit)
+            {
+                for (uint8_t x = 10; x < 16; ++x) setPixel(x, y, CRGB(70, 180, 255));
+            }
+        }
+
+        if (TetrisControl::gameOver())
+        {
+            for (uint8_t x = 10; x < 16; ++x) setPixel(x, 15, CRGB(255, 20, 20));
+        }
+        else if (TetrisControl::paused())
+        {
+            for (uint8_t x = 10; x < 16; ++x) setPixel(x, 15, CRGB(255, 190, 30));
+        }
 
         FastLED.show();
         markLedActivity();
@@ -752,6 +826,7 @@ bool ClockControl::setActive(bool enabled)
     if (enabled)
     {
         if (!available()) return false;
+        TetrisControl::stop();
         drawingMode = false;
         clockMode = true;
         autoPlaylist = false;
@@ -807,6 +882,13 @@ bool ClockControl::readLocalTime(struct tm& value)
 bool DisplayControl::drawing()
 {
     return drawingMode;
+}
+
+void DisplayControl::leaveDrawingMode()
+{
+    drawingMode = false;
+    clockMode = false;
+    autoPlaylist = false;
 }
 
 uint8_t DisplayControl::brightness()
@@ -887,6 +969,7 @@ bool DisplayControl::applyFrame(const char* hex, size_t length)
             setPixel(x, y, CRGB(channel(offset), channel(offset + 2U), channel(offset + 4U)));
         }
     }
+    TetrisControl::stop();
     drawingMode = true;
     clockMode = false;
     autoPlaylist = false;
@@ -969,14 +1052,23 @@ void loop()
     WebDashboard::update();
 
     uint32_t nowMs = millis();
-    if (!clockMode && autoPlaylist &&
+    if (!TetrisControl::active() && !clockMode && autoPlaylist &&
         (nowMs - lastEffectChangeMs) >= EFFECT_DURATION_MS)
     {
         nextEffect();
         nowMs = millis();
     }
 
-    if (clockMode)
+    if (TetrisControl::active())
+    {
+        TetrisControl::update(nowMs);
+        if ((nowMs - lastFrameMs) >= 40U)
+        {
+            lastFrameMs = nowMs;
+            renderTetris();
+        }
+    }
+    else if (clockMode)
     {
         struct tm localTime;
         if (ClockControl::readLocalTime(localTime) && localTime.tm_sec != lastClockSecond)
